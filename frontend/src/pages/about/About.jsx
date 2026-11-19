@@ -1,10 +1,11 @@
 import React from 'react';
+import { SITE_NAME } from '../../config';
 
 function About() {
   return (
     <div className='flex flex-col h-full text-white p-4 md:p-6 lg:p-8'>
       <h1 className='text-2xl md:text-3xl font-bold mb-4'>
-        About SocialPredict
+        About {SITE_NAME}
       </h1>
       <div className='bg-gray-800 rounded-lg shadow-lg flex-grow overflow-auto'>
         <div className='p-4 md:p-6 space-y-4 md:space-y-6'>

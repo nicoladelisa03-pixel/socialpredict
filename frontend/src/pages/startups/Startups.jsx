@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listStartups } from '../../api/startupsApi';
-import { safeStartupWebsite, startupWebsiteLabel } from './startupWebsite';
+import { SITE_NAME } from '../../config';
+import { useDocumentMeta } from '../../hooks/useDocumentMeta';
+import { isTestStartup, safeStartupWebsite, startupWebsiteLabel } from './startupWebsite';
 
 function Startups() {
+  useDocumentMeta({ title: `Startups | ${SITE_NAME}` });
   const [startups, setStartups] = useState([]);
   const [status, setStatus] = useState('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -80,6 +83,9 @@ function Startups() {
             }
             return (
               <li key={startup.slug || startup.id} className='rounded-lg bg-gray-800 shadow-lg overflow-hidden'>
+                {isTestStartup(startup.slug) ? (
+                  <p className='px-4 pt-4 text-xs font-semibold uppercase tracking-wide text-gray-400 md:px-6'>Test record</p>
+                ) : null}
                 {profilePath ? (
                   <Link
                     to={profilePath}

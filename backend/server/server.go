@@ -552,9 +552,12 @@ func registerApplicationRoutes(router *mux.Router, db *gorm.DB, configService co
 	router.HandleFunc("/v0/startups", startuphandlers.ListHandler(startupService)).Methods("GET")
 	router.HandleFunc("/v0/startups/{slug}", startuphandlers.GetHandler(startupService)).Methods("GET")
 	router.HandleFunc("/v0/startups/{slug}/markets", startuphandlers.ListMarketsHandler(startupService)).Methods("GET")
+	router.HandleFunc("/v0/startups/{slug}/funding", startuphandlers.ListFundingHandler(startupService)).Methods("GET")
 	router.Handle("/v0/admin/startup-markets", securityMiddleware(startuphandlers.ListMarketAssociationsHandler(startupService, authService))).Methods("GET")
 	router.Handle("/v0/admin/startups", securityMiddleware(startuphandlers.CreateHandler(startupService, authService))).Methods("POST")
 	router.Handle("/v0/admin/startups/{slug}", securityMiddleware(startuphandlers.UpdateHandler(startupService, authService))).Methods("PATCH")
+	router.Handle("/v0/admin/startups/{slug}/funding", securityMiddleware(startuphandlers.CreateFundingHandler(startupService, authService))).Methods("POST")
+	router.Handle("/v0/admin/startups/{slug}/funding/{entryId}", securityMiddleware(startuphandlers.UpdateFundingHandler(startupService, authService))).Methods("PATCH")
 	router.Handle("/v0/admin/markets/{id}/startup", securityMiddleware(startuphandlers.SetMarketStartupHandler(startupService, authService))).Methods("PATCH")
 
 	router.Handle("/v0/admin/market-tags", securityMiddleware(adminhandlers.ListAdminMarketTagsHandler(marketsService, authService))).Methods("GET")

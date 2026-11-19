@@ -108,17 +108,17 @@ func TestSeedHomepage_RendersHTML(t *testing.T) {
 	}
 
 	// Verify HTML contains expected elements from the actual content structure
-	if !strings.Contains(content.HTML, "BrierFoxForecast (BFF)") {
-		t.Errorf("Expected HTML to contain BFF title, got: %s", content.HTML)
+	if !strings.Contains(content.HTML, "Startup Predictions") {
+		t.Errorf("Expected HTML to contain the product title, got: %s", content.HTML)
 	}
-	if !strings.Contains(content.HTML, "About BFF") {
-		t.Errorf("Expected HTML to contain About section, got: %s", content.HTML)
+	if !strings.Contains(content.HTML, "Browse startups") {
+		t.Errorf("Expected HTML to contain the startups section, got: %s", content.HTML)
 	}
 	if !strings.Contains(content.HTML, `class="bg-gray-800`) {
 		t.Errorf("Expected HTML to contain Tailwind classes, got: %s", content.HTML)
 	}
-	if !strings.Contains(content.HTML, `/HomePageLogo.png`) {
-		t.Errorf("Expected HTML to contain logo reference, got: %s", content.HTML)
+	if !strings.Contains(content.HTML, `href="/startups"`) {
+		t.Errorf("Expected HTML to contain the startups link, got: %s", content.HTML)
 	}
 	if !strings.Contains(content.HTML, `aria-labelledby=`) {
 		t.Errorf("Expected HTML to contain accessibility attributes, got: %s", content.HTML)
@@ -169,8 +169,7 @@ func TestSeedHomepage_FallbackContent(t *testing.T) {
 	}
 	// Note: The fallback might actually load the real content instead of simple fallback
 	// Check for either fallback content or actual content
-	if !strings.Contains(content.HTML, "Welcome to BrierFoxForecast") &&
-		!strings.Contains(content.HTML, "BrierFoxForecast (BFF)") {
+	if !strings.Contains(content.HTML, "Startup Predictions") {
 		t.Errorf("Expected rendered fallback or actual HTML content, got: %s", content.HTML)
 	}
 }

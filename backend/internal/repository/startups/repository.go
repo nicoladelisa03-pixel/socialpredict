@@ -232,6 +232,118 @@ func linkedMarketFromModel(row models.Market) dstartups.LinkedMarket {
 	}
 }
 
+func (r *GormRepository) CreateFundingRound(ctx context.Context, round *dstartups.FundingRound) error {
+	if r == nil || r.db == nil || round == nil || round.StartupID <= 0 {
+		return dstartups.ErrInvalidInput
+	}
+	row := fundingModel(round)
+	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return err
+	}
+	*round = fundingFromModel(row)
+	return nil
+}
+
+func (r *GormRepository) UpdateFundingRound(ctx context.Context, round *dstartups.FundingRound) error {
+	if r == nil || r.db == nil || round == nil || round.ID <= 0 {
+		return dstartups.ErrInvalidInput
+	}
+	updates := map[string]any{
+		"round_label":       round.RoundLabel,
+		"announcement_date": round.AnnouncementDate,
+		"valuation_basis":   round.ValuationBasis,
+		"currency":          round.Currency,
+		"evidence_url":      round.EvidenceURL,
+		"source_label":      round.SourceLabel,
+		"note":              round.Note,
+	}
+	if round.AmountRaisedMinor == nil {
+		updates["amount_raised_minor"] = gorm.Expr("NULL")
+	} else {
+		updates["amount_raised_minor"] = *round.AmountRaisedMinor
+	}
+	if round.ValuationMinor == nil {
+		updates["valuation_minor"] = gorm.Expr("NULL")
+	} else {
+		updates["valuation_minor"] = *round.ValuationMinor
+	}
+	result := r.db.WithContext(ctx).Model(&models.FundingRound{}).Where("id = ?", round.ID).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return dstartups.ErrFundingNotFound
+	}
+	return nil
+}
+
+func (r *GormRepository) ListFundingRounds(ctx context.Context, startupID int64) ([]dstartups.FundingRound, error) {
+	if r == nil || r.db == nil || startupID <= 0 {
+		return nil, dstartups.ErrInvalidInput
+	}
+	var rows []models.FundingRound
+	err := r.db.WithContext(ctx).
+		Where("startup_id = ?", startupID).
+		Order("announcement_date ASC, id ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	rounds := make([]dstartups.FundingRound, 0, len(rows))
+	for _, row := range rows {
+		rounds = append(rounds, fundingFromModel(row))
+	}
+	return rounds, nil
+}
+
+func (r *GormRepository) GetFundingRound(ctx context.Context, id int64) (*dstartups.FundingRound, error) {
+	if r == nil || r.db == nil || id <= 0 {
+		return nil, dstartups.ErrInvalidInput
+	}
+	var row models.FundingRound
+	err := r.db.WithContext(ctx).First(&row, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, dstartups.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	round := fundingFromModel(row)
+	return &round, nil
+}
+
+func fundingModel(round *dstartups.FundingRound) models.FundingRound {
+	return models.FundingRound{
+		ID:                round.ID,
+		StartupID:         round.StartupID,
+		RoundLabel:        round.RoundLabel,
+		AnnouncementDate:  round.AnnouncementDate,
+		AmountRaisedMinor: round.AmountRaisedMinor,
+		ValuationMinor:    round.ValuationMinor,
+		ValuationBasis:    round.ValuationBasis,
+		Currency:          round.Currency,
+		EvidenceURL:       round.EvidenceURL,
+		SourceLabel:       round.SourceLabel,
+		Note:              round.Note,
+	}
+}
+
+func fundingFromModel(row models.FundingRound) dstartups.FundingRound {
+	return dstartups.FundingRound{
+		ID:                row.ID,
+		StartupID:         row.StartupID,
+		RoundLabel:        row.RoundLabel,
+		AnnouncementDate:  row.AnnouncementDate,
+		AmountRaisedMinor: row.AmountRaisedMinor,
+		ValuationMinor:    row.ValuationMinor,
+		ValuationBasis:    row.ValuationBasis,
+		Currency:          row.Currency,
+		EvidenceURL:       row.EvidenceURL,
+		SourceLabel:       row.SourceLabel,
+		Note:              row.Note,
+	}
+}
+
 func isDuplicate(err error) bool {
 	if err == nil {
 		return false

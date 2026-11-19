@@ -4,11 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StartupProfile from './StartupProfile';
-import { getStartup, getStartupMarkets } from '../../api/startupsApi';
+import { getStartup, getStartupFunding, getStartupMarkets } from '../../api/startupsApi';
 
 vi.mock('../../api/startupsApi', () => ({
   getStartup: vi.fn(),
   getStartupMarkets: vi.fn(),
+  getStartupFunding: vi.fn(async () => ({ rounds: [], latestReportedValuation: null })),
 }));
 
 const renderProfile = (path = '/startups/step3-verify') => render(
@@ -84,6 +85,120 @@ describe('Startup profile', () => {
     expect(first.getAttribute('href')).toBe('/markets/11');
     expect(second.getAttribute('href')).toBe('/markets/12');
     expect(screen.getByText('Resolved YES')).toBeTruthy();
+  });
+
+  it('shows sourced funding in announcement order and the latest reported valuation', async () => {
+    emptyMarkets();
+    getStartup.mockResolvedValue({
+      id: 8,
+      name: 'Mercor',
+      slug: 'mercor',
+      description: 'A private company',
+    });
+    getStartupFunding.mockResolvedValueOnce({
+      rounds: [
+        {
+          id: 1,
+          roundLabel: 'Seed',
+          announcementDate: '2024-01-02',
+          amountRaisedMinor: 125050,
+          valuationMinor: null,
+          valuationBasis: 'unspecified',
+          currency: 'USD',
+          evidenceUrl: 'https://example.com/seed',
+          sourceLabel: 'Seed announcement',
+        },
+        {
+          id: 2,
+          roundLabel: 'Series A',
+          announcementDate: '2025-06-01',
+          amountRaisedMinor: null,
+          valuationMinor: 900000,
+          valuationBasis: 'post-money',
+          currency: 'USD',
+          evidenceUrl: 'https://example.com/series-a',
+          sourceLabel: 'Series A announcement',
+        },
+      ],
+      latestReportedValuation: {
+        id: 2,
+        roundLabel: 'Series A',
+        announcementDate: '2025-06-01',
+        valuationMinor: 900000,
+        valuationBasis: 'post-money',
+        currency: 'USD',
+        evidenceUrl: 'https://example.com/series-a',
+        sourceLabel: 'Series A announcement',
+      },
+    });
+
+    renderProfile('/startups/mercor');
+
+    expect(await screen.findByRole('heading', { name: 'Latest reported valuation' })).toBeTruthy();
+    expect(screen.getAllByText('USD 9,000.00').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Reported on 2025-06-01\. post-money\./)).toBeTruthy();
+    expect(screen.getByText(/not a prediction-market price or a probability/)).toBeTruthy();
+    const source = screen.getByRole('link', { name: 'Source: Series A announcement' });
+    expect(source.getAttribute('href')).toBe('https://example.com/series-a');
+    const headings = screen.getAllByRole('heading', { name: /Seed|Series A/ }).map((heading) => heading.textContent);
+    expect(headings).toEqual(['Seed', 'Series A']);
+    expect(screen.getByText('Amount raised USD 1,250.50')).toBeTruthy();
+    expect(screen.getByText('Amount raised was not disclosed')).toBeTruthy();
+    expect(screen.getByText('Reported valuation was not disclosed')).toBeTruthy();
+    expect(screen.getByText('Reported valuation USD 9,000.00 (post-money)')).toBeTruthy();
+  });
+
+  it('shows Mercor Series D as a sourced valuation, separate from market prices', async () => {
+    emptyMarkets();
+    getStartup.mockResolvedValue({
+      id: 12,
+      name: 'Mercor',
+      slug: 'mercor',
+      description: 'Mercor organizes human expertise for AI work.',
+    });
+    getStartupFunding.mockResolvedValueOnce({
+      rounds: [{
+        id: 1,
+        roundLabel: 'Series D',
+        announcementDate: '2026-11-10',
+        amountRaisedMinor: 75000000000,
+        valuationMinor: 2000000000000,
+        valuationBasis: 'unspecified',
+        currency: 'USD',
+        evidenceUrl: 'https://www.mercor.com/blog/series-d/',
+        sourceLabel: 'Mercor',
+      }],
+      latestReportedValuation: {
+        id: 1,
+        roundLabel: 'Series D',
+        announcementDate: '2026-11-10',
+        valuationMinor: 2000000000000,
+        valuationBasis: 'unspecified',
+        currency: 'USD',
+        evidenceUrl: 'https://www.mercor.com/blog/series-d/',
+        sourceLabel: 'Mercor',
+      },
+    });
+
+    renderProfile('/startups/mercor');
+
+    expect(await screen.findByText('USD 20,000,000,000.00')).toBeTruthy();
+    expect(screen.getByText('Amount raised USD 750,000,000.00')).toBeTruthy();
+    expect(screen.getByText(/Reported on 2026-11-10\. basis not stated\./)).toBeTruthy();
+    expect(screen.getByText(/not a prediction-market price or a probability/)).toBeTruthy();
+    const source = screen.getByRole('link', { name: 'Source: Mercor' });
+    expect(source.getAttribute('href')).toBe('https://www.mercor.com/blog/series-d/');
+    expect(screen.queryByText(/probability/i).textContent).not.toMatch(/YES|NO/);
+  });
+
+  it('shows the empty funding state without inventing a figure', async () => {
+    emptyMarkets();
+    getStartup.mockResolvedValue({ id: 1, name: 'Step 3 Verified', slug: 'step3-verify' });
+
+    renderProfile();
+
+    expect(await screen.findByText('No verified funding data added yet')).toBeTruthy();
+    expect(screen.queryByText(/USD /)).toBeNull();
   });
 
   it('shows an empty market list', async () => {

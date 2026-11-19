@@ -61,14 +61,14 @@ func TestSeedHomepage_Integration_WithActualFile(t *testing.T) {
 	}
 
 	// Verify HTML contains rendered content with preserved classes
-	if !strings.Contains(content.HTML, "BrierFoxForecast (BFF)") {
-		t.Errorf("Expected HTML to contain BFF title, got: %s", content.HTML)
+	if !strings.Contains(content.HTML, "Startup Predictions") {
+		t.Errorf("Expected HTML to contain the product title, got: %s", content.HTML)
 	}
 	if !strings.Contains(content.HTML, `class=`) {
 		t.Errorf("Expected HTML to contain CSS classes, got: %s", content.HTML)
 	}
-	if !strings.Contains(content.HTML, `/HomePageLogo.png`) {
-		t.Errorf("Expected HTML to contain logo reference, got: %s", content.HTML)
+	if !strings.Contains(content.HTML, `href="/startups"`) {
+		t.Errorf("Expected HTML to contain the startups link, got: %s", content.HTML)
 	}
 	if !strings.Contains(content.HTML, `aria-labelledby=`) {
 		t.Errorf("Expected HTML to contain accessibility attributes, got: %s", content.HTML)

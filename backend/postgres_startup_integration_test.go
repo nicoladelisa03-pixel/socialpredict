@@ -50,6 +50,10 @@ func TestPostgresStartupReadinessAndMigrationPosture(t *testing.T) {
 			seedsRan = true
 			return nil
 		},
+		seedStartups: func(*gorm.DB) error {
+			seedsRan = true
+			return nil
+		},
 	})
 	if !errors.Is(err, migrationErr) {
 		t.Fatalf("expected startup writer to return migration failure, got %v", err)
@@ -78,6 +82,9 @@ func TestPostgresStartupReadinessAndMigrationPosture(t *testing.T) {
 			return nil
 		},
 		seedHomepage: func(*gorm.DB, string) error {
+			return nil
+		},
+		seedStartups: func(*gorm.DB) error {
 			return nil
 		},
 	})

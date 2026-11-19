@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import AdminStartupFunding from './AdminStartupFunding';
 import {
   createAdminStartup,
   listAdminStartupMarkets,
@@ -426,6 +427,8 @@ function AdminStartups() {
               </div>
             </form>
           )}
+
+          {selectedStartup ? <AdminStartupFunding slug={selectedStartup.slug} /> : null}
 
           <form onSubmit={handleLink} className='grid gap-4 rounded-lg border border-gray-700 bg-gray-900/70 p-4'>
             <h2 className='text-lg font-semibold'>Link a market</h2>

@@ -7,8 +7,9 @@ import (
 )
 
 type memoryRepo struct {
-	items map[string]Startup
-	next  int64
+	items  map[string]Startup
+	next   int64
+	rounds []FundingRound
 }
 
 func (m *memoryRepo) Create(_ context.Context, startup *Startup) error {
@@ -58,6 +59,43 @@ func (m *memoryRepo) ListLinkedMarkets(context.Context, int64) ([]LinkedMarket, 
 
 func (m *memoryRepo) ListMarketAssociations(context.Context) ([]MarketAssociation, error) {
 	return []MarketAssociation{}, nil
+}
+
+func (m *memoryRepo) CreateFundingRound(_ context.Context, round *FundingRound) error {
+	m.next++
+	round.ID = m.next
+	m.rounds = append(m.rounds, *round)
+	return nil
+}
+
+func (m *memoryRepo) UpdateFundingRound(_ context.Context, round *FundingRound) error {
+	for i := range m.rounds {
+		if m.rounds[i].ID == round.ID {
+			m.rounds[i] = *round
+			return nil
+		}
+	}
+	return ErrFundingNotFound
+}
+
+func (m *memoryRepo) ListFundingRounds(_ context.Context, startupID int64) ([]FundingRound, error) {
+	out := []FundingRound{}
+	for _, round := range m.rounds {
+		if round.StartupID == startupID {
+			out = append(out, round)
+		}
+	}
+	return out, nil
+}
+
+func (m *memoryRepo) GetFundingRound(_ context.Context, id int64) (*FundingRound, error) {
+	for _, round := range m.rounds {
+		if round.ID == id {
+			copied := round
+			return &copied, nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 func TestCreateNormalizesAndRejectsInvalidFields(t *testing.T) {

@@ -61,6 +61,10 @@ type Repository interface {
 	SetMarketStartup(ctx context.Context, marketID int64, startupID *int64) error
 	ListLinkedMarkets(ctx context.Context, startupID int64) ([]LinkedMarket, error)
 	ListMarketAssociations(ctx context.Context) ([]MarketAssociation, error)
+	CreateFundingRound(ctx context.Context, round *FundingRound) error
+	UpdateFundingRound(ctx context.Context, round *FundingRound) error
+	ListFundingRounds(ctx context.Context, startupID int64) ([]FundingRound, error)
+	GetFundingRound(ctx context.Context, id int64) (*FundingRound, error)
 }
 
 // Service validates startup records before they are stored.

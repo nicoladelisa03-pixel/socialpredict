@@ -182,6 +182,8 @@ func writeStartupError(w http.ResponseWriter, err error) {
 		_ = handlers.WriteFailureWithDetails(w, http.StatusNotFound, handlers.ReasonNotFound, "Startup not found.", nil)
 	case errors.Is(err, dstartups.ErrMarketNotFound):
 		_ = handlers.WriteFailureWithDetails(w, http.StatusNotFound, handlers.ReasonNotFound, "Market not found.", nil)
+	case errors.Is(err, dstartups.ErrFundingNotFound):
+		_ = handlers.WriteFailureWithDetails(w, http.StatusNotFound, handlers.ReasonNotFound, "Funding round not found.", nil)
 	default:
 		_ = handlers.WriteFailure(w, http.StatusInternalServerError, handlers.ReasonInternalError)
 	}

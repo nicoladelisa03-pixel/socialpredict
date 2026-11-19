@@ -5,7 +5,7 @@ import { useMarketDetails } from '../../hooks/useMarketDetails';
 import { useAuth } from '../../helpers/AuthContent';
 import LoadingSpinner from '../../components/loaders/LoadingSpinner';
 import { useDocumentMeta } from '../../hooks/useDocumentMeta';
-import { DOMAIN_URL } from '../../config';
+import { DOMAIN_URL, SITE_NAME } from '../../config';
 
 const MarketDetails = () => {
   const { username, usertype, moderatorStatus } = useAuth();
@@ -14,8 +14,8 @@ const MarketDetails = () => {
 
   useDocumentMeta({
     title: details?.market?.questionTitle
-      ? `${details.market.questionTitle} | SocialPredict`
-      : 'SocialPredict',
+      ? `${details.market.questionTitle} | ${SITE_NAME}`
+      : SITE_NAME,
     description: details
       ? `${Math.round(currentProbability * 100)}% probability · created by ${details.creator?.username || details.market.creatorUsername}`
       : undefined,

@@ -19,6 +19,7 @@ import {
   StatsSVG,
 } from '../../assets/components/SvgIcons';
 import useFrontendConfig from '../../hooks/useFrontendConfig';
+import { SITE_NAME } from '../../config';
 import {
   getPendingAdminReviewCounts,
   totalPendingReviewCount,
@@ -252,7 +253,7 @@ const Sidebar = () => {
         } md:relative md:translate-x-0`}
       >
         <div className='flex items-center justify-between p-3 border-b border-gray-700'>
-          <h2 className='text-lg font-bold'>SocialPredict</h2>
+          <h2 className='text-lg font-bold'>{SITE_NAME}</h2>
           <button
             onClick={toggleSidebar}
             className='md:hidden'

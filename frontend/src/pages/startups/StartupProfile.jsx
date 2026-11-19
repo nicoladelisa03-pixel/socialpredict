@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getStartup, getStartupMarkets } from '../../api/startupsApi';
-import { safeStartupWebsite, startupWebsiteLabel } from './startupWebsite';
+import { SITE_NAME } from '../../config';
+import { useDocumentMeta } from '../../hooks/useDocumentMeta';
+import StartupFunding from './StartupFunding';
+import { isTestStartup, safeStartupWebsite, startupWebsiteLabel } from './startupWebsite';
 
 const missingDescription = 'No description has been added yet.';
 
 function StartupProfile() {
   const { slug } = useParams();
   const [startup, setStartup] = useState(null);
+  useDocumentMeta({
+    title: startup?.name ? `${startup.name} | ${SITE_NAME}` : SITE_NAME,
+  });
   const [status, setStatus] = useState('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [requestId, setRequestId] = useState(0);
@@ -114,6 +120,9 @@ function StartupProfile() {
 
       {status === 'ready' && (
         <article className='rounded-lg bg-gray-800 shadow-lg p-4 md:p-6'>
+          {isTestStartup(startup?.slug) ? (
+            <p className='mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400'>Test record</p>
+          ) : null}
           <h1 className='text-2xl md:text-3xl font-bold'>{name}</h1>
           <p className='mt-3 text-gray-300'>{startup?.description || missingDescription}</p>
           {website ? (
@@ -130,6 +139,8 @@ function StartupProfile() {
           )}
         </article>
       )}
+
+      {status === 'ready' && <StartupFunding slug={slug} />}
 
       {status === 'ready' && (
         <section className='mt-6' aria-label='Prediction markets'>

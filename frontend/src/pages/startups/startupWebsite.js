@@ -16,6 +16,10 @@ export const safeStartupWebsite = (value) => {
   }
 };
 
+const testStartupSlugs = new Set(['step3-verify', 'step8-admin']);
+
+export const isTestStartup = (slug) => testStartupSlugs.has(slug);
+
 export const startupWebsiteLabel = (url) => {
   try {
     return new URL(url).hostname.replace(/^www\./, '');

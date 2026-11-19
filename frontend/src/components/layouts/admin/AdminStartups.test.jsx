@@ -18,6 +18,9 @@ vi.mock('../../../api/startupsApi', () => ({
   updateAdminStartup: vi.fn(),
   listAdminStartupMarkets: vi.fn(),
   setAdminMarketStartup: vi.fn(),
+  getStartupFunding: vi.fn(async () => ({ rounds: [], latestReportedValuation: null })),
+  createAdminStartupFunding: vi.fn(),
+  updateAdminStartupFunding: vi.fn(),
 }));
 
 const publishedMarket = {

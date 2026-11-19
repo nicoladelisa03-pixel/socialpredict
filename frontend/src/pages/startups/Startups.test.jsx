@@ -59,6 +59,7 @@ describe('Startups directory', () => {
     expect(screen.queryByRole('link', { name: /alert/i })).toBeNull();
     expect(screen.getByRole('link', { name: 'Step 3 Verified' }).getAttribute('href')).toBe('/startups/step3-verify');
     expect(screen.getByRole('link', { name: 'No Site' }).getAttribute('href')).toBe('/startups/no-site');
+    expect(screen.getByText('Test record')).toBeTruthy();
   });
 
   it('shows an empty state when the API returns no startups', async () => {

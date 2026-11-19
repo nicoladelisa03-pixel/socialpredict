@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { apiRequest } from '../../api/httpClient';
+import { SITE_NAME } from '../../config';
+import { useDocumentMeta } from '../../hooks/useDocumentMeta';
 
 function Home() {
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(true);
+  useDocumentMeta({ title: SITE_NAME });
 
   useEffect(() => {
     apiRequest('/v0/content/home', {

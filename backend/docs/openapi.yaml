@@ -254,6 +254,9 @@ x-route-family-migration-matrix:
         - /v0/startups/{slug}/markets
         - /v0/admin/startups
         - /v0/admin/startups/{slug}
+        - /v0/startups/{slug}/funding
+        - /v0/admin/startups/{slug}/funding
+        - /v0/admin/startups/{slug}/funding/{entryId}
         - /v0/admin/startup-markets
         - /v0/admin/markets/{id}/startup
         - /v0/content/home
@@ -4866,6 +4869,177 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReasonResponse'
 
+  /v0/startups/{slug}/funding:
+    get:
+      tags: [Startups]
+      operationId: listStartupFunding
+      summary: List a startup's sourced funding history
+      description: >
+        Public read of funding rounds entered by an admin. Amounts are integer
+        minor units, such as cents, and null means the figure was not disclosed.
+        A reported valuation is not a prediction-market price or probability.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Funding history returned. The rounds list is empty when none have been added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupFundingEnvelopeResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups/{slug}/funding:
+    post:
+      tags: [Startups]
+      operationId: createAdminStartupFunding
+      summary: Add a sourced funding round
+      description: >
+        Admin-only endpoint that records one funding announcement for a startup.
+        Unknown amounts are omitted or null, never zero. There is no delete endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFundingRoundRequest'
+      responses:
+        '201':
+          description: Funding round created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundingRoundEnvelopeResponse'
+        '400':
+          description: Invalid date, amount, currency, basis, or source link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected funding creation failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups/{slug}/funding/{entryId}:
+    patch:
+      tags: [Startups]
+      operationId: updateAdminStartupFunding
+      summary: Correct a sourced funding round
+      description: >
+        Admin-only replacement of one funding round that belongs to this startup.
+        Sending null clears an optional amount. A round owned by another startup
+        is not found.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        - in: path
+          name: entryId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFundingRoundRequest'
+      responses:
+        '200':
+          description: Funding round updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundingRoundEnvelopeResponse'
+        '400':
+          description: Invalid funding fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Startup or funding round not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected funding update failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
   /v0/admin/market-tags:
     get:
       tags: [Markets]
@@ -6693,6 +6867,111 @@ components:
           enum: [true]
         result:
           $ref: '#/components/schemas/StartupResponse'
+
+    AdminFundingRoundRequest:
+      type: object
+      required: [roundLabel, announcementDate, currency, evidenceUrl, sourceLabel]
+      properties:
+        roundLabel:
+          type: string
+          maxLength: 80
+        announcementDate:
+          type: string
+          format: date
+        amountRaisedMinor:
+          type: integer
+          format: int64
+          nullable: true
+          description: Amount raised in minor units. Null means not disclosed. Zero is rejected.
+        valuationMinor:
+          type: integer
+          format: int64
+          nullable: true
+          description: Reported valuation in minor units. Null means not disclosed. Zero is rejected.
+        valuationBasis:
+          type: string
+          enum: [pre-money, post-money, unspecified]
+        currency:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+        evidenceUrl:
+          type: string
+          format: uri
+        sourceLabel:
+          type: string
+          maxLength: 120
+        note:
+          type: string
+          maxLength: 500
+
+    FundingRoundResponse:
+      type: object
+      required: [id, roundLabel, announcementDate, valuationBasis, currency, evidenceUrl, sourceLabel]
+      properties:
+        id:
+          type: integer
+          format: int64
+        roundLabel:
+          type: string
+        announcementDate:
+          type: string
+          format: date
+        amountRaisedMinor:
+          type: integer
+          format: int64
+          nullable: true
+        valuationMinor:
+          type: integer
+          format: int64
+          nullable: true
+        valuationBasis:
+          type: string
+          enum: [pre-money, post-money, unspecified]
+        currency:
+          type: string
+        evidenceUrl:
+          type: string
+          format: uri
+        sourceLabel:
+          type: string
+        note:
+          type: string
+
+    FundingRoundEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/FundingRoundResponse'
+
+    StartupFundingHistoryResponse:
+      type: object
+      required: [rounds, latestReportedValuation]
+      properties:
+        rounds:
+          type: array
+          items:
+            $ref: '#/components/schemas/FundingRoundResponse'
+        latestReportedValuation:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/FundingRoundResponse'
+          description: >
+            The newest round that disclosed a valuation. Null when none did.
+            This is a reported fundraising figure, not a market probability.
+
+    StartupFundingEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupFundingHistoryResponse'
 
     AdminMarketStartupRequest:
       type: object

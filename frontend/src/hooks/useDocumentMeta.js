@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { SITE_DESCRIPTION, SITE_NAME } from '../config';
 
 /**
  * useDocumentMeta — sets document.title and OpenGraph meta tags for a page.
@@ -17,8 +18,8 @@ import { useEffect } from 'react';
  */
 export function useDocumentMeta({ title, description, url, image } = {}) {
   useEffect(() => {
-    const defaultTitle = 'SocialPredict';
-    const defaultDescription = 'Prediction markets for the social web';
+    const defaultTitle = SITE_NAME;
+    const defaultDescription = SITE_DESCRIPTION;
     const defaultImage = typeof window !== 'undefined' ? `${window.location.origin}/logo512.png` : '';
 
     const prevTitle = document.title;
@@ -40,7 +41,7 @@ export function useDocumentMeta({ title, description, url, image } = {}) {
     const ogUrl = setMeta('og:url', url || (typeof window !== 'undefined' ? window.location.href : ''));
     const ogType = setMeta('og:type', 'website');
     const ogImage = setMeta('og:image', image || defaultImage);
-    const ogSiteName = setMeta('og:site_name', 'SocialPredict');
+    const ogSiteName = setMeta('og:site_name', SITE_NAME);
 
     function setNameMeta(name, content) {
       let el = document.querySelector(`meta[name="${name}"]`);
@@ -65,7 +66,7 @@ export function useDocumentMeta({ title, description, url, image } = {}) {
       ogUrl.setAttribute('content', '');
       ogType.setAttribute('content', 'website');
       ogImage.setAttribute('content', defaultImage);
-      ogSiteName.setAttribute('content', 'SocialPredict');
+      ogSiteName.setAttribute('content', SITE_NAME);
       twitterCard.setAttribute('content', 'summary_large_image');
       twitterTitle.setAttribute('content', defaultTitle);
       twitterDesc.setAttribute('content', defaultDescription);
