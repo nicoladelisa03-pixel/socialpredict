@@ -28,6 +28,7 @@ import (
 	metricshandlers "socialpredict/handlers/metrics"
 	positionshandlers "socialpredict/handlers/positions"
 	setuphandlers "socialpredict/handlers/setup"
+	startuphandlers "socialpredict/handlers/startups"
 	statshandlers "socialpredict/handlers/stats"
 	usershandlers "socialpredict/handlers/users"
 	usercredit "socialpredict/handlers/users/credit"
@@ -37,7 +38,9 @@ import (
 	"socialpredict/internal/app/readmodelinvalidation"
 	appruntime "socialpredict/internal/app/runtime"
 	dmarkets "socialpredict/internal/domain/markets"
+	dstartups "socialpredict/internal/domain/startups"
 	readmodelrepo "socialpredict/internal/repository/readmodels"
+	startuprepo "socialpredict/internal/repository/startups"
 	authsvc "socialpredict/internal/service/auth"
 	configsvc "socialpredict/internal/service/config"
 	"socialpredict/logger"
@@ -545,6 +548,15 @@ func registerApplicationRoutes(router *mux.Router, db *gorm.DB, configService co
 	router.Handle("/v0/admin/market-description-amendments/{id}", securityMiddleware(adminhandlers.ReviewMarketDescriptionAmendmentHandler(marketsService, authService))).Methods("PATCH")
 	router.Handle("/v0/admin/market-group-answer-additions", securityMiddleware(adminhandlers.ListMarketGroupAnswerAdditionsHandler(marketsService, authService))).Methods("GET")
 	router.Handle("/v0/admin/market-group-answer-additions/{id}", securityMiddleware(markDiscoveryStaleOnSuccess(readModelSnapshotRepo, "market_group_answer_added", adminhandlers.ReviewMarketGroupAnswerAdditionHandler(marketsService, authService)))).Methods("PATCH")
+	startupService := dstartups.NewService(startuprepo.NewGormRepository(db))
+	router.HandleFunc("/v0/startups", startuphandlers.ListHandler(startupService)).Methods("GET")
+	router.HandleFunc("/v0/startups/{slug}", startuphandlers.GetHandler(startupService)).Methods("GET")
+	router.HandleFunc("/v0/startups/{slug}/markets", startuphandlers.ListMarketsHandler(startupService)).Methods("GET")
+	router.Handle("/v0/admin/startup-markets", securityMiddleware(startuphandlers.ListMarketAssociationsHandler(startupService, authService))).Methods("GET")
+	router.Handle("/v0/admin/startups", securityMiddleware(startuphandlers.CreateHandler(startupService, authService))).Methods("POST")
+	router.Handle("/v0/admin/startups/{slug}", securityMiddleware(startuphandlers.UpdateHandler(startupService, authService))).Methods("PATCH")
+	router.Handle("/v0/admin/markets/{id}/startup", securityMiddleware(startuphandlers.SetMarketStartupHandler(startupService, authService))).Methods("PATCH")
+
 	router.Handle("/v0/admin/market-tags", securityMiddleware(adminhandlers.ListAdminMarketTagsHandler(marketsService, authService))).Methods("GET")
 	router.Handle("/v0/admin/market-tags", securityMiddleware(markDiscoveryStaleOnSuccess(readModelSnapshotRepo, "tag_catalog_changed", adminhandlers.CreateAdminMarketTagHandler(marketsService, authService)))).Methods("POST")
 	router.Handle("/v0/admin/market-tags/{slug}", securityMiddleware(markDiscoveryStaleOnSuccess(readModelSnapshotRepo, "tag_catalog_changed", adminhandlers.UpdateAdminMarketTagHandler(marketsService, authService)))).Methods("PATCH")

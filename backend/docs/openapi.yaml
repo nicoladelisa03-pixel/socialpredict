@@ -249,6 +249,13 @@ x-route-family-migration-matrix:
         - /v0/admin/market-group-answer-additions/{id}
         - /v0/admin/market-tags
         - /v0/admin/market-tags/{slug}
+        - /v0/startups
+        - /v0/startups/{slug}
+        - /v0/startups/{slug}/markets
+        - /v0/admin/startups
+        - /v0/admin/startups/{slug}
+        - /v0/admin/startup-markets
+        - /v0/admin/markets/{id}/startup
         - /v0/content/home
         - /v0/admin/content/home
         - /v0/content/market-discovery/{slug}
@@ -264,7 +271,7 @@ x-route-family-migration-matrix:
       success_contract: mixed raw JSON DTO and JSON `{ok:true,result}`
       failure_contract: ReasonResponse plus middleware 429 where wrapped
       migration_state: mixed_raw_success_reason_failure
-      source: backend/server/server.go, handlers/admin, handlers/cms
+      source: backend/server/server.go, handlers/admin, handlers/cms, handlers/startups
 
 paths:
   /health:
@@ -4551,6 +4558,314 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReasonResponse'
 
+  /v0/startups:
+    get:
+      tags: [Startups]
+      operationId: listStartups
+      summary: List startups
+      description: >
+        Provisional public read of admin-managed startup profiles. Funding,
+        valuation, and market links are not part of this response.
+      responses:
+        '200':
+          description: Startups returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupListEnvelopeResponse'
+        '500':
+          description: Unexpected startup listing failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/startups/{slug}:
+    get:
+      tags: [Startups]
+      operationId: getStartup
+      summary: Get a startup by slug
+      description: Provisional public read of one startup profile.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Startup returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupEnvelopeResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/startups/{slug}/markets:
+    get:
+      tags: [Startups]
+      operationId: listStartupMarkets
+      summary: List a startup's public markets
+      description: >
+        Provisional public read of YES/NO markets linked to a startup.
+        Unpublished markets are omitted. Trading fields are not changed by this read.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Public linked markets returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupMarketsEnvelopeResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startup-markets:
+    get:
+      tags: [Startups]
+      operationId: listAdminStartupMarkets
+      summary: List markets and their startup links
+      description: >
+        Admin-only list of existing markets, including proposed markets, and the
+        slug of the startup each one is linked to. An empty slug means the
+        market is not linked. This does not make those markets public.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Market associations returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStartupMarketsEnvelopeResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected market association failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/markets/{id}/startup:
+    patch:
+      tags: [Startups]
+      operationId: setAdminMarketStartup
+      summary: Attach or clear a market's startup
+      description: >
+        Admin-only endpoint that sets, changes, or clears the startup linked to
+        an existing market. An empty startupSlug clears the link. Trading,
+        prices, and resolution are not changed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMarketStartupRequest'
+      responses:
+        '200':
+          description: Market startup association saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketStartupEnvelopeResponse'
+        '400':
+          description: Invalid market id or startup slug.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Market or startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups:
+    post:
+      tags: [Startups]
+      operationId: createAdminStartup
+      summary: Create a startup
+      description: Admin-only endpoint for creating a startup profile. The slug is unique and stays fixed after creation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStartupRequest'
+      responses:
+        '201':
+          description: Startup created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupEnvelopeResponse'
+        '400':
+          description: Invalid startup fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '409':
+          description: A startup with this slug already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected startup creation failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups/{slug}:
+    patch:
+      tags: [Startups]
+      operationId: updateAdminStartup
+      summary: Update a startup
+      description: >
+        Admin-only endpoint for updating a startup's name, description, and
+        website. A different slug is rejected. There is no delete endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStartupUpdateRequest'
+      responses:
+        '200':
+          description: Startup updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupEnvelopeResponse'
+        '400':
+          description: Invalid startup fields or a requested slug change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected startup update failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
   /v0/admin/market-tags:
     get:
       tags: [Markets]
@@ -6286,6 +6601,183 @@ components:
           enum: [true]
         result:
           $ref: '#/components/schemas/MarketTagResponse'
+
+    AdminStartupRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 64
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        description:
+          type: string
+          maxLength: 2000
+        websiteUrl:
+          type: string
+          maxLength: 500
+          format: uri
+
+    AdminStartupUpdateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          description: Must be omitted or equal to the current slug. A different slug is rejected.
+          maxLength: 64
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        description:
+          type: string
+          maxLength: 2000
+        websiteUrl:
+          type: string
+          maxLength: 500
+          format: uri
+
+    StartupResponse:
+      type: object
+      required: [id, name, slug, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        websiteUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    StartupListResponse:
+      type: object
+      required: [startups, total]
+      properties:
+        startups:
+          type: array
+          items:
+            $ref: '#/components/schemas/StartupResponse'
+        total:
+          type: integer
+
+    StartupListEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupListResponse'
+
+    StartupEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupResponse'
+
+    AdminMarketStartupRequest:
+      type: object
+      required: [startupSlug]
+      properties:
+        startupSlug:
+          type: string
+          description: Slug of the startup to attach. An empty string clears the association.
+
+    MarketStartupLinkResponse:
+      type: object
+      required: [marketId, startupSlug]
+      properties:
+        marketId:
+          type: integer
+          format: int64
+        startupSlug:
+          type: string
+
+    AdminStartupMarketAssociation:
+      type: object
+      required: [marketId, questionTitle, lifecycleStatus, startupSlug]
+      properties:
+        marketId:
+          type: integer
+          format: int64
+        questionTitle:
+          type: string
+        lifecycleStatus:
+          type: string
+        startupSlug:
+          type: string
+          description: Empty when the market is not linked to a startup.
+
+    AdminStartupMarketsResponse:
+      type: object
+      required: [markets, total]
+      properties:
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminStartupMarketAssociation'
+        total:
+          type: integer
+
+    AdminStartupMarketsEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/AdminStartupMarketsResponse'
+
+    MarketStartupEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/MarketStartupLinkResponse'
+
+    StartupMarketsResponse:
+      type: object
+      required: [markets, total]
+      properties:
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicMarketResponse'
+        total:
+          type: integer
+
+    StartupMarketsEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupMarketsResponse'
 
     MarketResponse:
       type: object

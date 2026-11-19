@@ -31,12 +31,9 @@ func (s *Service) getMarketBetDisplayInfos(ctx context.Context, marketID int64) 
 		return nil, ErrInvalidInput
 	}
 
-	market, err := s.repo.GetByID(ctx, marketID)
+	market, err := s.publicMarketByID(ctx, marketID)
 	if err != nil {
 		return nil, err
-	}
-	if market == nil {
-		return nil, ErrMarketNotFound
 	}
 
 	modelBets, err := s.loadMarketBets(ctx, marketID)

@@ -251,6 +251,7 @@ export const mergeMarketDetailsWithSummary = (details, summary) => {
 
 export const useMarketDetails = () => {
   const [details, setDetails] = useState(null);
+  const [availability, setAvailability] = useState('loading');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState(null);
   const [currentProbability, setCurrentProbability] = useState(0);
@@ -264,14 +265,21 @@ export const useMarketDetails = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
+      setAvailability('loading');
+      setDetails(null);
       try {
         const [detailsResponse, summaryResponse] = await Promise.all([
           fetch(`${API_URL}/v0/markets/${marketId}`),
           fetch(`${API_URL}/v0/read/markets/${marketId}/summary`).catch(() => null),
         ]);
         if (!detailsResponse.ok) {
-          throw new Error('Failed to fetch market data');
+          if (!cancelled) {
+            setDetails(null);
+            setAvailability(detailsResponse.status === 404 ? 'not-found' : 'error');
+          }
+          return;
         }
         const data = unwrapApiEnvelope(await detailsResponse.json());
         let normalized = normalizeMarketDetails(data);
@@ -279,19 +287,29 @@ export const useMarketDetails = () => {
           const summary = normalizeMarketDetails(unwrapApiEnvelope(await summaryResponse.json()));
           normalized = mergeMarketDetailsWithSummary(normalized, summary);
         }
-        setDetails(normalized);
-        setCurrentProbability(calculateCurrentProbability(normalized));
+        if (!cancelled) {
+          setDetails(normalized);
+          setCurrentProbability(calculateCurrentProbability(normalized));
+          setAvailability('ready');
+        }
       } catch (error) {
         console.error('Error fetching market data:', error);
+        if (!cancelled) {
+          setDetails(null);
+          setAvailability('error');
+        }
       }
     };
 
     fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, [marketId, triggerRefresh]);
 
   const refetchData = () => {
     setTriggerRefresh((prev) => !prev);
   };
 
-  return { details, isLoggedIn, token, refetchData, currentProbability };
+  return { details, availability, isLoggedIn, token, refetchData, currentProbability };
 };

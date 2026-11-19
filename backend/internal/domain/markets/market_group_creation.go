@@ -129,7 +129,7 @@ func (s *Service) GetMarketGroupOverview(ctx context.Context, groupID int64) (*M
 	if err != nil {
 		return nil, err
 	}
-	if group == nil {
+	if group == nil || !PublicLifecycleVisible(group.LifecycleStatus) {
 		return nil, ErrMarketGroupNotFound
 	}
 

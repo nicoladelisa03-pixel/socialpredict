@@ -737,3 +737,40 @@ func TestResolveMarketGroupPaysSingleGroupWorkProfit(t *testing.T) {
 		t.Fatalf("unexpected work-profit transaction: %+v", applied[0])
 	}
 }
+
+func TestPublicGroupReadsHideProposedGroups(t *testing.T) {
+	now := marketsTestTime()
+	group := &markets.MarketGroup{
+		ID:              44,
+		QuestionTitle:   "Hidden proposed group",
+		Description:     "secret group description",
+		LifecycleStatus: markets.MarketLifecycleProposed,
+		CreatorUsername: "moderator",
+		Members: []markets.MarketGroupMember{
+			{ID: 1, GroupID: 44, MarketID: 90, AnswerLabel: "Secret answer", DisplayOrder: 0},
+		},
+	}
+	repo := newProjectionRepo(func(repo *projectionRepo) {
+		repo.getMarketGroupFunc = func(context.Context, int64) (*markets.MarketGroup, error) {
+			return group, nil
+		}
+		repo.getByIDFunc = func(context.Context, int64) (*markets.Market, error) {
+			t.Fatal("public group read loaded a child of a proposed group")
+			return nil, nil
+		}
+	})
+	service := markets.NewService(repo, newNoopUserService(), newFixedClock(now), markets.Config{})
+
+	if _, err := service.GetMarketGroupOverview(context.Background(), group.ID); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupOverview error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetMarketGroupBetsPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupBetsPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetMarketGroupPositionsPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupPositionsPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetMarketGroupLeaderboardPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupLeaderboardPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+}

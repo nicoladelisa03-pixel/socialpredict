@@ -4,6 +4,8 @@ import { useAuth } from './AuthContent';
 import ChangePassword from '../pages/changepassword/ChangePassword';
 import Profile from '../pages/profile/Profile';
 import Markets from '../pages/markets/Markets';
+import Startups from '../pages/startups/Startups';
+import StartupProfile from '../pages/startups/StartupProfile';
 import Create from '../pages/create/Create';
 import About from '../pages/about/About';
 import Stats from '../pages/stats/Stats';
@@ -69,6 +71,20 @@ const AppRoutes = () => {
           <Redirect to='/changepassword' />
         ) : (
           <MarketDetails />
+        )}
+      </Route>
+      <Route exact path='/startups'>
+        {isLoggedIn && mustChangePassword ? (
+          <Redirect to='/changepassword' />
+        ) : (
+          <Startups />
+        )}
+      </Route>
+      <Route exact path='/startups/:slug'>
+        {isLoggedIn && mustChangePassword ? (
+          <Redirect to='/changepassword' />
+        ) : (
+          <StartupProfile />
         )}
       </Route>
       <Route exact path='/markets'>
@@ -142,6 +158,9 @@ const AppRoutes = () => {
       </Route>
       <Route exact path='/admin/cms'>
         {renderAdminDashboard({ defaultTab: 'CMS' })}
+      </Route>
+      <Route exact path='/admin/startups'>
+        {renderAdminDashboard({ defaultTab: 'Startups' })}
       </Route>
       <Route exact path='/admin'>
         {renderAdminDashboard()}

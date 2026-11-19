@@ -71,12 +71,9 @@ func (s *Service) GetMarketDetails(ctx context.Context, marketID int64) (*Market
 		return nil, ErrInvalidInput
 	}
 
-	market, err := s.repo.GetByID(ctx, marketID)
+	market, err := s.publicMarketByID(ctx, marketID)
 	if err != nil {
 		return nil, err
-	}
-	if market == nil {
-		return nil, ErrMarketNotFound
 	}
 
 	bets, err := s.repo.ListBetsForMarket(ctx, marketID)
@@ -98,6 +95,22 @@ func (s *Service) GetMarketDetails(ctx context.Context, marketID int64) (*Market
 		MarketDust:            accounting.MarketDust,
 		DescriptionAmendments: s.approvedDescriptionAmendments(ctx, marketID),
 	}, nil
+}
+
+// publicMarketByID loads a market for an unauthenticated or ordinary-user read.
+// Hidden lifecycle rows use the same not-found result as a missing ID.
+func (s *Service) publicMarketByID(ctx context.Context, marketID int64) (*Market, error) {
+	if marketID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	market, err := s.repo.GetByID(ctx, marketID)
+	if err != nil {
+		return nil, err
+	}
+	if market == nil || !market.PubliclyVisible() {
+		return nil, ErrMarketNotFound
+	}
+	return market, nil
 }
 
 func (s *Service) buildCreatorSummary(ctx context.Context, username string) *CreatorSummary {

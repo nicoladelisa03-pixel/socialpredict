@@ -40,6 +40,27 @@ func NormalizeLifecycleStatus(value string) string {
 	}
 }
 
+// PublicLifecycleVisible matches the public market list. Published, resolved,
+// and legacy empty rows are visible. Proposed, rejected, cancelled, and
+// lifecycle-closed rows stay hidden. A published market past its resolution
+// time remains visible because its lifecycle stays published.
+func PublicLifecycleVisible(lifecycle string) bool {
+	switch NormalizeLifecycleStatus(lifecycle) {
+	case MarketLifecyclePublished, MarketLifecycleResolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// PubliclyVisible reports whether this market may be returned by a public read.
+func (m *Market) PubliclyVisible() bool {
+	if m == nil {
+		return false
+	}
+	return PublicLifecycleVisible(m.LifecycleStatus)
+}
+
 func LifecycleFromPublicStatus(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case MarketStatusResolved:

@@ -3,6 +3,7 @@ package marketshandlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -248,6 +249,9 @@ func (h *MarketDiscoveryReadModelHandler) pinnedMarketResponses(ctx context.Cont
 		}
 		if summaryProvider, ok := h.markets.(marketSummaryProvider); ok {
 			summary, err := summaryProvider.GetMarketSummaryReadModel(ctx, pin.MarketID)
+			if errors.Is(err, dmarkets.ErrMarketNotFound) {
+				continue
+			}
 			if err != nil {
 				return nil, fmt.Errorf("pinned market %d: %w", pin.MarketID, err)
 			}
@@ -260,6 +264,9 @@ func (h *MarketDiscoveryReadModelHandler) pinnedMarketResponses(ctx context.Cont
 			continue
 		}
 		details, err := h.markets.GetMarketDetails(ctx, pin.MarketID)
+		if errors.Is(err, dmarkets.ErrMarketNotFound) {
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("pinned market %d: %w", pin.MarketID, err)
 		}

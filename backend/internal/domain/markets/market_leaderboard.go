@@ -2,6 +2,7 @@ package markets
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	positionsmath "socialpredict/internal/domain/math/positions"
@@ -23,11 +24,11 @@ func (s *Service) getMarketLeaderboardRows(ctx context.Context, marketID int64) 
 		return nil, ErrInvalidInput
 	}
 
-	market, err := s.repo.GetByID(ctx, marketID)
+	market, err := s.publicMarketByID(ctx, marketID)
 	if err != nil {
-		return nil, ErrMarketNotFound
-	}
-	if market == nil {
+		if errors.Is(err, ErrInvalidInput) {
+			return nil, err
+		}
 		return nil, ErrMarketNotFound
 	}
 

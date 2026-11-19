@@ -79,8 +79,8 @@ func (s *Service) RefreshMarketLeaderboardSnapshot(ctx context.Context, marketID
 // GetMarketLeaderboardReadModel returns a page from the stored display-only
 // market leaderboard snapshot. A missing snapshot is not an error.
 func (s *Service) GetMarketLeaderboardReadModel(ctx context.Context, marketID int64, p Page) (*MarketLeaderboardSnapshot, error) {
-	if marketID <= 0 {
-		return nil, ErrInvalidInput
+	if _, err := s.publicMarketByID(ctx, marketID); err != nil {
+		return nil, err
 	}
 	snapshotRepo, ok := s.repo.(MarketLeaderboardSnapshotRepository)
 	if !ok {

@@ -207,7 +207,7 @@ func (s *Service) marketGroupActivityMembers(ctx context.Context, groupID int64)
 	if err != nil {
 		return nil, nil, err
 	}
-	if group == nil {
+	if group == nil || !PublicLifecycleVisible(group.LifecycleStatus) {
 		return nil, nil, ErrMarketGroupNotFound
 	}
 	return group, OrderedMarketGroupMembers(group.Members), nil
