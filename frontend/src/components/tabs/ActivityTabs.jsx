@@ -1,14 +1,10 @@
 import React from 'react';
 import SiteTabs from './SiteTabs';
-import BetsActivityLayout from '../layouts/activity/bets/BetsActivity';
-import PositionsActivityLayout from '../layouts/activity/positions/PositionsActivity';
-import LeaderboardActivity from '../layouts/activity/leaderboard/LeaderboardActivity';
+import { PublicMarketActivity } from '../layouts/activity/PublicTradingActivity';
 
-const ActivityTabs = ({ marketId, market, refreshTrigger }) => {
+const ActivityTabs = ({ marketId, refreshTrigger }) => {
     const tabsData = [
-        { label: 'Bets', content: <BetsActivityLayout marketId={marketId} refreshTrigger={refreshTrigger} /> },
-        { label: 'Positions', content: <PositionsActivityLayout marketId={marketId} market={market} refreshTrigger={refreshTrigger} /> },
-        { label: 'Leaderboard', content: <LeaderboardActivity marketId={marketId} market={market} refreshTrigger={refreshTrigger} /> },
+        { label: 'Activity', content: <PublicMarketActivity marketId={marketId} refreshTrigger={refreshTrigger} /> },
         { label: 'Comments', content: <div>Comments Go here...</div> },
     ];
 

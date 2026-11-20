@@ -59,18 +59,15 @@ const Style = () => {
           <h3 className='text-lg font-semibold text-white mb-3'>Component Imports</h3>
           <div className='space-y-3'>
             <div>
-              <div className='text-emerald-400 text-sm font-medium mb-1'>Bets Grid Component</div>
+              <div className='text-emerald-400 text-sm font-medium mb-1'>Public activity</div>
               <code className='text-xs text-gray-300 bg-gray-800 px-2 py-1 rounded block'>
-                import BetsActivity from '../components/layouts/activity/bets/BetsActivity';
+                import {'{ PublicMarketActivity }'} from '../components/layouts/activity/PublicTradingActivity';
               </code>
-              <div className='text-gray-400 text-xs mt-1'>Usage: {`<BetsActivity marketId={marketId} />`}</div>
+              <div className='text-gray-400 text-xs mt-1'>Public market pages show totals only. The grids below are unused style samples.</div>
             </div>
             <div>
-              <div className='text-emerald-400 text-sm font-medium mb-1'>Leaderboard Grid Component</div>
-              <code className='text-xs text-gray-300 bg-gray-800 px-2 py-1 rounded block'>
-                import LeaderboardActivity from '../components/layouts/activity/leaderboard/LeaderboardActivity';
-              </code>
-              <div className='text-gray-400 text-xs mt-1'>Usage: {`<LeaderboardActivity marketId={marketId} />`}</div>
+              <div className='text-emerald-400 text-sm font-medium mb-1'>Leaderboard grid sample</div>
+              <div className='text-gray-400 text-xs mt-1'>Not used on public market pages. Named profit stays private.</div>
             </div>
           </div>
         </div>

@@ -26,23 +26,28 @@ func MarketBetsHandlerWithService(svc dmarkets.ServiceInterface) http.HandlerFun
 			return
 		}
 
-		betsDisplayInfo, err := getMarketBets(r, svc, marketID)
+		activity, err := publicMarketActivity(r, svc, marketID)
 		if err != nil {
 			writeMarketBetsError(w, marketID, err)
 			return
 		}
 
-		if err := handlers.WriteResult(w, http.StatusOK, betsDisplayInfo); err != nil {
+		if err := handlers.WriteResult(w, http.StatusOK, activity); err != nil {
 			logger.LogError("MarketBets", "WriteResponse", err)
 		}
 	}
 }
 
-func getMarketBets(r *http.Request, svc dmarkets.ServiceInterface, marketID int64) ([]*dmarkets.BetDisplayInfo, error) {
-	if !hasPaginationQuery(r) {
-		return svc.GetMarketBets(r.Context(), marketID)
+func publicMarketActivity(r *http.Request, svc dmarkets.ServiceInterface, marketID int64) (dmarkets.PublicTradingActivity, error) {
+	bets, err := svc.GetMarketBets(r.Context(), marketID)
+	if err != nil {
+		return dmarkets.PublicTradingActivity{}, err
 	}
-	return svc.GetMarketBetsPage(r.Context(), marketID, parsePage(r, 20))
+	positions, err := svc.GetMarketPositions(r.Context(), marketID)
+	if err != nil {
+		return dmarkets.PublicTradingActivity{}, err
+	}
+	return dmarkets.PublicTradingActivityFrom(bets, positions), nil
 }
 
 func parseMarketID(marketIDStr string) (int64, error) {
@@ -55,28 +60,6 @@ func parseMarketID(marketIDStr string) (int64, error) {
 		return 0, errors.New("Invalid market ID")
 	}
 	return marketID, nil
-}
-
-func hasPaginationQuery(r *http.Request) bool {
-	query := r.URL.Query()
-	return query.Get("limit") != "" || query.Get("offset") != ""
-}
-
-func parsePage(r *http.Request, defaultLimit int) dmarkets.Page {
-	query := r.URL.Query()
-	limit := defaultLimit
-	if raw := query.Get("limit"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			limit = parsed
-		}
-	}
-	offset := 0
-	if raw := query.Get("offset"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			offset = parsed
-		}
-	}
-	return dmarkets.Page{Limit: limit, Offset: offset}
 }
 
 func writeMarketBetsError(w http.ResponseWriter, marketID int64, err error) {

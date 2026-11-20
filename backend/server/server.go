@@ -102,7 +102,8 @@ func buildRouter(openAPISpec []byte, swaggerUIFS fs.FS, db *gorm.DB, configServi
 
 	router := mux.NewRouter()
 	router.MethodNotAllowedHandler = methodNotAllowedHandler(router)
-	if err := registerInfraRoutes(router, openAPISpec, swaggerUIFS, db, readiness, operationalMetrics); err != nil {
+	authService := app.BuildApplicationWithConfigAndJWTSigningKey(db, configService, securityConfig.JWTSigningKey).GetAuthService()
+	if err := registerInfraRoutes(router, openAPISpec, swaggerUIFS, db, readiness, operationalMetrics, authService); err != nil {
 		return nil, err
 	}
 
@@ -167,11 +168,11 @@ type applicationReportingService interface {
 	metricshandlers.GlobalLeaderboardService
 }
 
-func registerInfraRoutes(router *mux.Router, openAPISpec []byte, swaggerUIFS fs.FS, db *gorm.DB, readiness *appruntime.Readiness, operationalMetrics *appruntime.OperationalMetrics) error {
+func registerInfraRoutes(router *mux.Router, openAPISpec []byte, swaggerUIFS fs.FS, db *gorm.DB, readiness *appruntime.Readiness, operationalMetrics *appruntime.OperationalMetrics, auth authsvc.Authenticator) error {
 	probe := appruntime.NewServingProbe(db, readiness)
 	router.Handle("/health", livenessHandler(probe)).Methods("GET")
 	router.Handle("/readyz", readinessHandler(probe)).Methods("GET")
-	router.Handle("/ops/status", operationalStatusHandler(probe, db, operationalMetrics)).Methods("GET")
+	router.Handle("/ops/status", operationalStatusHandler(probe, db, operationalMetrics, auth)).Methods("GET")
 
 	// OpenAPI spec endpoint
 	router.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
@@ -246,8 +247,18 @@ func readinessHandler(probe appruntime.ServingProbe) http.Handler {
 	})
 }
 
-func operationalStatusHandler(probe appruntime.ServingProbe, db *gorm.DB, operationalMetrics *appruntime.OperationalMetrics) http.Handler {
+func operationalStatusHandler(probe appruntime.ServingProbe, db *gorm.DB, operationalMetrics *appruntime.OperationalMetrics, auth authsvc.Authenticator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth == nil {
+			_ = handlers.WriteFailure(w, http.StatusInternalServerError, handlers.ReasonInternalError)
+			return
+		}
+		if _, authErr := auth.RequireAdmin(r); authErr != nil {
+			w.Header().Set("Cache-Control", "no-store")
+			_ = authhttp.WriteFailure(w, authErr)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), readinessProbeTimeout)
 		defer cancel()
 
@@ -499,13 +510,13 @@ func registerApplicationRoutes(router *mux.Router, db *gorm.DB, configService co
 	// handle market positions, get trades - using service injection from new locations
 	router.Handle("/v0/markets/bets/{marketId}", securityMiddleware(betshandlers.MarketBetsHandlerWithService(marketsService))).Methods("GET")
 	router.Handle("/v0/markets/positions/{marketId}", securityMiddleware(positionshandlers.MarketPositionsHandlerWithService(marketsService))).Methods("GET")
-	router.Handle("/v0/markets/positions/{marketId}/{username}", securityMiddleware(positionshandlers.MarketUserPositionHandlerWithService(marketsService))).Methods("GET")
+	router.Handle("/v0/markets/positions/{marketId}/{username}", securityMiddleware(positionshandlers.MarketUserPositionHandlerWithService(marketsService, authService))).Methods("GET")
 
 	// handle public user stuff
 	router.Handle("/v0/userinfo/{username}", securityMiddleware(usershandlers.GetPublicUserHandler(usersService))).Methods("GET")
-	router.Handle("/v0/usercredit/{username}", securityMiddleware(usercredit.GetUserCreditHandler(usersService, configService.Economics().User.MaximumDebtAllowed))).Methods("GET")
-	router.Handle("/v0/portfolio/{username}", securityMiddleware(publicuser.GetPortfolioHandler(usersService))).Methods("GET")
-	router.Handle("/v0/users/{username}/financial", securityMiddleware(usershandlers.GetUserFinancialHandler(usersService))).Methods("GET")
+	router.Handle("/v0/usercredit/{username}", securityMiddleware(usercredit.GetUserCreditHandler(usersService, configService.Economics().User.MaximumDebtAllowed, authService))).Methods("GET")
+	router.Handle("/v0/portfolio/{username}", securityMiddleware(publicuser.GetPortfolioHandler(usersService, authService))).Methods("GET")
+	router.Handle("/v0/users/{username}/financial", securityMiddleware(usershandlers.GetUserFinancialHandler(usersService, authService))).Methods("GET")
 	router.Handle("/v0/read/users/{username}/financial-summary", securityMiddleware(usershandlers.GetUserFinancialReadModelHandler(analyticsService, authService))).Methods("GET")
 	router.Handle("/v0/users/{username}/owned-markets", securityMiddleware(marketshandlers.ListUserOwnedMarketsHandler(marketsService, authService))).Methods("GET")
 

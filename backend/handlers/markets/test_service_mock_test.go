@@ -22,6 +22,8 @@ type MockService struct {
 	MarketGroupBetsFn        func(ctx context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupBetsPage, error)
 	MarketGroupPositionsFn   func(ctx context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupPositionsPage, error)
 	MarketGroupLeaderboardFn func(ctx context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupLeaderboardPage, error)
+	PublicActivityFn         func(ctx context.Context, marketID int64) (dmarkets.PublicTradingActivity, error)
+	PublicGroupActivityFn    func(ctx context.Context, groupID int64) (dmarkets.PublicTradingActivity, error)
 	DetailsCalls             int
 }
 
@@ -76,6 +78,20 @@ func (m *MockService) GetMarketGroupLeaderboardPage(ctx context.Context, groupID
 		return m.MarketGroupLeaderboardFn(ctx, groupID, p)
 	}
 	return &dmarkets.MarketGroupLeaderboardPage{GroupID: groupID, Leaderboard: []*dmarkets.MarketGroupLeaderboardRow{}}, nil
+}
+
+func (m *MockService) GetPublicTradingActivity(ctx context.Context, marketID int64) (dmarkets.PublicTradingActivity, error) {
+	if m.PublicActivityFn != nil {
+		return m.PublicActivityFn(ctx, marketID)
+	}
+	return dmarkets.PublicTradingActivity{}, nil
+}
+
+func (m *MockService) GetPublicMarketGroupActivity(ctx context.Context, groupID int64) (dmarkets.PublicTradingActivity, error) {
+	if m.PublicGroupActivityFn != nil {
+		return m.PublicGroupActivityFn(ctx, groupID)
+	}
+	return dmarkets.PublicTradingActivity{}, nil
 }
 
 func (m *MockService) SetCustomLabels(ctx context.Context, marketID int64, yesLabel, noLabel string) error {

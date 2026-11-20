@@ -7,7 +7,8 @@ const UserInfoTabContent = ({ username, userData }) => {
     const [userCredit, setUserCredit] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const { isLoggedIn, token } = useAuth();
+    const { isLoggedIn, token, username: signedInUsername } = useAuth();
+    const ownsAccount = Boolean(token) && signedInUsername === username;
 
     useEffect(() => {
         const fetchUserCredit = async () => {
@@ -25,14 +26,14 @@ const UserInfoTabContent = ({ username, userData }) => {
             }
         };
 
-        if (username && token) {
+        if (ownsAccount) {
             fetchUserCredit();
         } else {
             setUserCredit(null);
             setError(null);
             setLoading(false);
         }
-    }, [username, token]);
+    }, [ownsAccount, username, token]);
 
     const renderPersonalLinks = () => {
         if (!userData) return null;
@@ -77,13 +78,15 @@ const UserInfoTabContent = ({ username, userData }) => {
                                 <LoadingSpinner />
                                 <span className="ml-2 text-gray-300">Loading...</span>
                             </div>
-                        ) : !isLoggedIn ? (
+                        ) : !ownsAccount ? (
                             <div className="text-center">
                                 <div className="text-xl font-semibold text-blue-100">
-                                    Log in to see credits
+                                    {isLoggedIn ? 'Credits are private.' : 'Log in to see your credits'}
                                 </div>
                                 <div className="text-sm text-gray-400 mt-2">
-                                    User credit is visible to logged-in players.
+                                    {isLoggedIn
+                                        ? 'Only this account can see its available credits.'
+                                        : 'Sign in to see your own available credits.'}
                                 </div>
                             </div>
                         ) : error ? (

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -13,7 +14,32 @@ import (
 	"socialpredict/handlers"
 	"socialpredict/handlers/users/dto"
 	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 )
+
+type creditAuthMock struct {
+	user *dusers.User
+	err  *authsvc.AuthError
+}
+
+func (m creditAuthMock) CurrentUser(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.user, nil
+}
+
+func (m creditAuthMock) RequireUser(r *http.Request) (*dusers.User, *authsvc.AuthError) {
+	return m.CurrentUser(r)
+}
+
+func (m creditAuthMock) RequireAdmin(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	return nil, &authsvc.AuthError{Kind: authsvc.ErrorKindAdminRequired}
+}
+
+func ownCreditAccount(username string) creditAuthMock {
+	return creditAuthMock{user: &dusers.User{Username: username}}
+}
 
 type creditServiceMock struct {
 	credit          int64
@@ -81,7 +107,7 @@ func (m *creditServiceMock) ChangePassword(context.Context, string, string, stri
 
 func TestGetUserCreditHandlerSuccess(t *testing.T) {
 	mock := &creditServiceMock{credit: 750}
-	handler := GetUserCreditHandler(mock, 500)
+	handler := GetUserCreditHandler(mock, 500, ownCreditAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/usercredit/alice", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
@@ -107,7 +133,7 @@ func TestGetUserCreditHandlerSuccess(t *testing.T) {
 }
 
 func TestGetUserCreditHandlerMethodNotAllowed(t *testing.T) {
-	handler := GetUserCreditHandler(&creditServiceMock{}, 500)
+	handler := GetUserCreditHandler(&creditServiceMock{}, 500, ownCreditAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodPost, "/v0/usercredit/alice", nil)
 	rec := httptest.NewRecorder()
@@ -121,7 +147,7 @@ func TestGetUserCreditHandlerMethodNotAllowed(t *testing.T) {
 }
 
 func TestGetUserCreditHandlerInternalError(t *testing.T) {
-	handler := GetUserCreditHandler(&creditServiceMock{err: errors.New("boom")}, 500)
+	handler := GetUserCreditHandler(&creditServiceMock{err: errors.New("boom")}, 500, ownCreditAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/usercredit/alice", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
@@ -133,6 +159,36 @@ func TestGetUserCreditHandlerInternalError(t *testing.T) {
 		t.Fatalf("expected status 500, got %d", rec.Code)
 	}
 	requireCreditFailureReason(t, rec, handlers.ReasonInternalError)
+}
+
+func TestGetUserCreditHandlerRequiresOwnAccount(t *testing.T) {
+	mock := &creditServiceMock{credit: 750}
+
+	handler := GetUserCreditHandler(mock, 500, creditAuthMock{
+		err: &authsvc.AuthError{Kind: authsvc.ErrorKindMissingToken},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v0/usercredit/alice", nil)
+	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+	requireCreditFailureReason(t, rec, handlers.ReasonInvalidToken)
+
+	handler = GetUserCreditHandler(mock, 500, ownCreditAccount("bob"))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+	requireCreditFailureReason(t, rec, handlers.ReasonAuthorizationDenied)
+	if strings.Contains(rec.Body.String(), "750") {
+		t.Fatalf("denial leaked credit: %s", rec.Body.String())
+	}
+	if mock.lastUsername != "" {
+		t.Fatalf("denied read called the credit service for %q", mock.lastUsername)
+	}
 }
 
 func requireCreditFailureReason(t *testing.T, rec *httptest.ResponseRecorder, reason handlers.FailureReason) {

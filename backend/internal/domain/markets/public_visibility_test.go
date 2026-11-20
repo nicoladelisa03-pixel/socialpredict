@@ -81,6 +81,9 @@ func TestPublicReadsHideUnapprovedMarkets(t *testing.T) {
 		if _, err := service.GetMarketLeaderboard(ctx, id, markets.Page{}); !errors.Is(err, markets.ErrMarketNotFound) {
 			t.Fatalf("GetMarketLeaderboard(%d) error = %v, want ErrMarketNotFound", id, err)
 		}
+		if _, err := service.GetPublicTradingActivity(ctx, id); !errors.Is(err, markets.ErrMarketNotFound) {
+			t.Fatalf("GetPublicTradingActivity(%d) error = %v, want ErrMarketNotFound", id, err)
+		}
 		if _, err := service.ProjectProbability(ctx, markets.ProbabilityProjectionRequest{MarketID: id, Amount: 10, Outcome: "YES"}); !errors.Is(err, markets.ErrMarketNotFound) {
 			t.Fatalf("ProjectProbability(%d) error = %v, want ErrMarketNotFound", id, err)
 		}
@@ -112,6 +115,9 @@ func TestPublicReadsHideUnapprovedMarkets(t *testing.T) {
 		}
 		if _, err := service.GetMarketBetsPage(ctx, id, markets.Page{}); err != nil {
 			t.Fatalf("GetMarketBetsPage(%d) error = %v", id, err)
+		}
+		if _, err := service.GetPublicTradingActivity(ctx, id); err != nil {
+			t.Fatalf("GetPublicTradingActivity(%d) error = %v", id, err)
 		}
 	}
 

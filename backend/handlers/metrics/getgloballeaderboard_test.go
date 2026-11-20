@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,8 +105,11 @@ func TestGetGlobalLeaderboardHandler_Success(t *testing.T) {
 	if !payload.OK {
 		t.Fatalf("expected ok=true, got false")
 	}
-	if len(payload.Result.Entries) == 0 {
-		t.Fatalf("expected non-empty leaderboard")
+	if payload.Result.ParticipantCount == 0 {
+		t.Fatalf("expected a participant count, got %+v", payload.Result)
+	}
+	if strings.Contains(rec.Body.String(), "alice") || strings.Contains(rec.Body.String(), "bob") || strings.Contains(rec.Body.String(), "username") || strings.Contains(rec.Body.String(), "totalProfit") {
+		t.Fatalf("public leaderboard named a trader: %s", rec.Body.String())
 	}
 }
 
@@ -185,12 +189,12 @@ func TestGlobalLeaderboardReadModel_ServesStaleSnapshotWithoutRefresh(t *testing
 		},
 	}
 
-	entries, freshness, err := globalLeaderboardReadModel(context.Background(), svc, 20, 0)
+	count, freshness, err := globalLeaderboardSummary(context.Background(), svc)
 	if err != nil {
-		t.Fatalf("globalLeaderboardReadModel returned error: %v", err)
+		t.Fatalf("globalLeaderboardSummary returned error: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Username != "cached" {
-		t.Fatalf("expected cached entry, got %+v", entries)
+	if count != 1 {
+		t.Fatalf("expected cached participant count 1, got %d", count)
 	}
 	if freshness == nil || !freshness.IsStale {
 		t.Fatalf("expected stale freshness to be served, got %+v", freshness)
@@ -280,11 +284,11 @@ func TestGetGlobalLeaderboardHandler_PaginatesResult(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if len(payload.Result.Entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(payload.Result.Entries))
+	if payload.Result.ParticipantCount != 5 {
+		t.Fatalf("expected full participant count 5, got %+v", payload.Result)
 	}
-	if payload.Result.Entries[0].Username != "user3" || payload.Result.Entries[0].Rank != 3 {
-		t.Fatalf("expected first paged entry user3 rank 3, got %+v", payload.Result.Entries[0])
+	if strings.Contains(rec.Body.String(), "username") || strings.Contains(rec.Body.String(), "user") {
+		t.Fatalf("public leaderboard named a trader: %s", rec.Body.String())
 	}
 	if payload.Result.Freshness != nil {
 		t.Fatalf("stub compute fallback should not include freshness, got %+v", payload.Result.Freshness)

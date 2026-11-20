@@ -200,8 +200,9 @@ type SystemMetricsReadModel struct {
 }
 
 type GlobalLeaderboardReadModel struct {
-	Entries   []GlobalUserProfitability
-	Freshness readmodels.Freshness
+	Entries          []GlobalUserProfitability
+	ParticipantCount int
+	Freshness        readmodels.Freshness
 }
 
 func (s FinancialSnapshot) AccountBalanceValue() int64     { return s.AccountBalance }

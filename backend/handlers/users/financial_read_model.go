@@ -31,27 +31,21 @@ type userFinancialReadModelResponse struct {
 	Freshness     freshnessResponse `json:"freshness"`
 }
 
-// GetUserFinancialReadModelHandler returns authenticated game-transparency
-// financial read models. Any logged-in user may view another user's game
-// financial summary, but logged-out visitors cannot.
+// GetUserFinancialReadModelHandler returns the caller's own financial read model.
+// Logged-out visitors and other accounts, including admins, cannot read it.
 func GetUserFinancialReadModelHandler(svc UserFinancialReadModelService, auth authsvc.Authenticator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			_ = handlers.WriteFailure(w, http.StatusMethodNotAllowed, handlers.ReasonMethodNotAllowed)
 			return
 		}
-		if auth == nil {
-			_ = handlers.WriteFailure(w, http.StatusInternalServerError, handlers.ReasonInternalError)
-			return
-		}
-		if _, authErr := auth.CurrentUser(r); authErr != nil {
-			_ = authhttp.WriteFailure(w, authErr)
-			return
-		}
 
 		username := mux.Vars(r)["username"]
 		if username == "" {
 			_ = handlers.WriteFailure(w, http.StatusBadRequest, handlers.ReasonInvalidRequest)
+			return
+		}
+		if !authhttp.RequireOwnAccount(w, r, auth, username) {
 			return
 		}
 

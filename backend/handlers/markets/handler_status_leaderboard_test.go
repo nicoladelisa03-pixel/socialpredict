@@ -6,11 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"socialpredict/handlers"
-	"socialpredict/handlers/markets/dto"
 	dmarkets "socialpredict/internal/domain/markets"
 	dusers "socialpredict/internal/domain/users"
 	authsvc "socialpredict/internal/service/auth"
@@ -73,27 +73,20 @@ func TestListByStatusHandler_Smoke(t *testing.T) {
 
 func TestMarketLeaderboardHandler_Smoke(t *testing.T) {
 	svc := &MockService{}
-	svc.MarketLeaderboardFn = func(ctx context.Context, marketID int64, p dmarkets.Page) ([]*dmarkets.LeaderboardRow, error) {
+	svc.MarketLeaderboardFn = func(context.Context, int64, dmarkets.Page) ([]*dmarkets.LeaderboardRow, error) {
+		t.Fatal("public leaderboard must not load named rows")
+		return nil, nil
+	}
+	svc.PublicActivityFn = func(ctx context.Context, marketID int64) (dmarkets.PublicTradingActivity, error) {
 		if marketID != 77 {
 			t.Fatalf("expected marketID 77, got %d", marketID)
 		}
-		if p.Limit != 25 {
-			t.Fatalf("expected limit 25, got %d", p.Limit)
-		}
-		return []*dmarkets.LeaderboardRow{{
-			Username:       "alice",
-			Profit:         12,
-			CurrentValue:   100,
-			TotalSpent:     88,
-			Position:       "YES",
-			YesSharesOwned: 5,
-			NoSharesOwned:  0,
-			Rank:           1,
-		}}, nil
+		return dmarkets.PublicTradingActivity{BetCount: 3, YesVolume: 20, NoVolume: 5, ParticipantCount: 2}, nil
 	}
 
 	handler := NewHandler(svc, nil, security.NewSecurityService())
 	req := httptest.NewRequest(http.MethodGet, "/v0/markets/77/leaderboard?limit=25", nil)
+	req.Header.Set("Authorization", "Bearer regular-user")
 	rr := httptest.NewRecorder()
 	router := mux.NewRouter()
 	router.HandleFunc("/v0/markets/{id}/leaderboard", handler.MarketLeaderboard)
@@ -103,143 +96,23 @@ func TestMarketLeaderboardHandler_Smoke(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rr.Code)
 	}
+	if strings.Contains(rr.Body.String(), "username") || strings.Contains(rr.Body.String(), "profit") {
+		t.Fatalf("public leaderboard exposed a trader: %s", rr.Body.String())
+	}
 
-	var resp handlers.SuccessEnvelope[dto.LeaderboardResponse]
+	var resp handlers.SuccessEnvelope[dmarkets.PublicTradingActivity]
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if !resp.OK {
-		t.Fatalf("expected ok=true, got false")
-	}
-	if resp.Result.Total != 1 {
-		t.Fatalf("expected total 1, got %d", resp.Result.Total)
-	}
-	if len(resp.Result.Leaderboard) != 1 || resp.Result.Leaderboard[0].Username != "alice" {
-		t.Fatalf("unexpected leaderboard payload: %+v", resp.Result.Leaderboard)
-	}
-}
-
-func TestMarketLeaderboardHandler_UsesSnapshotFreshnessWhenAvailable(t *testing.T) {
-	generatedAt := time.Now().UTC().Add(-2 * time.Minute)
-	svc := &readModelLeaderboardServiceMock{
-		MockService: MockService{
-			MarketLeaderboardFn: func(ctx context.Context, marketID int64, p dmarkets.Page) ([]*dmarkets.LeaderboardRow, error) {
-				t.Fatalf("raw leaderboard calculator should not be used when snapshot is available")
-				return nil, nil
-			},
-		},
-		ReadModelFn: func(ctx context.Context, marketID int64, p dmarkets.Page) (*dmarkets.MarketLeaderboardSnapshot, error) {
-			if marketID != 77 {
-				t.Fatalf("expected marketID 77, got %d", marketID)
-			}
-			if p.Limit != 25 {
-				t.Fatalf("expected limit 25, got %d", p.Limit)
-			}
-			return &dmarkets.MarketLeaderboardSnapshot{
-				MarketID:    marketID,
-				GeneratedAt: generatedAt,
-				Source:      "read_model",
-				Rows: []*dmarkets.LeaderboardRow{{
-					Username:     "snapshot_alice",
-					Profit:       8,
-					CurrentValue: 42,
-					TotalSpent:   34,
-					Position:     "YES",
-					Rank:         1,
-				}},
-			}, nil
-		},
-	}
-
-	handler := NewHandler(svc, nil, security.NewSecurityService())
-	req := httptest.NewRequest(http.MethodGet, "/v0/markets/77/leaderboard?limit=25", nil)
-	rr := httptest.NewRecorder()
-	router := mux.NewRouter()
-	router.HandleFunc("/v0/markets/{id}/leaderboard", handler.MarketLeaderboard)
-
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rr.Code)
-	}
-
-	var resp handlers.SuccessEnvelope[dto.LeaderboardResponse]
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if len(resp.Result.Leaderboard) != 1 || resp.Result.Leaderboard[0].Username != "snapshot_alice" {
-		t.Fatalf("unexpected leaderboard payload: %+v", resp.Result.Leaderboard)
-	}
-	if resp.Result.Freshness == nil {
-		t.Fatalf("expected snapshot freshness metadata")
-	}
-	if !resp.Result.Freshness.GeneratedAt.Equal(generatedAt) {
-		t.Fatalf("freshness generatedAt = %s, want %s", resp.Result.Freshness.GeneratedAt, generatedAt)
-	}
-	if resp.Result.Freshness.TargetFreshnessSeconds != int(dmarkets.MarketLeaderboardSnapshotTargetFreshness.Seconds()) {
-		t.Fatalf("freshness target = %d, want %d", resp.Result.Freshness.TargetFreshnessSeconds, int(dmarkets.MarketLeaderboardSnapshotTargetFreshness.Seconds()))
-	}
-	if resp.Result.Freshness.TransactionSafeRead {
-		t.Fatalf("leaderboard snapshot must not be marked transaction safe")
-	}
-}
-
-func TestMarketLeaderboardHandler_ServesStaleSnapshotWithoutRefresh(t *testing.T) {
-	generatedAt := time.Now().UTC().Add(-2 * dmarkets.MarketLeaderboardSnapshotTargetFreshness)
-	svc := &readModelLeaderboardServiceMock{
-		MockService: MockService{
-			MarketLeaderboardFn: func(ctx context.Context, marketID int64, p dmarkets.Page) ([]*dmarkets.LeaderboardRow, error) {
-				t.Fatalf("raw leaderboard calculator should not be used when stale snapshot is available")
-				return nil, nil
-			},
-		},
-		ReadModelFn: func(ctx context.Context, marketID int64, p dmarkets.Page) (*dmarkets.MarketLeaderboardSnapshot, error) {
-			return &dmarkets.MarketLeaderboardSnapshot{
-				MarketID:    marketID,
-				GeneratedAt: generatedAt,
-				Source:      "read_model",
-				IsStale:     true,
-				StaleReason: "bet_accepted",
-				Rows: []*dmarkets.LeaderboardRow{{
-					Username: "stale_snapshot_alice",
-					Rank:     1,
-				}},
-			}, nil
-		},
-		RefreshFn: func(ctx context.Context, marketID int64) (*dmarkets.MarketLeaderboardSnapshot, error) {
-			t.Fatalf("stale leaderboard snapshot should not refresh on read")
-			return nil, nil
-		},
-	}
-
-	handler := NewHandler(svc, nil, security.NewSecurityService())
-	req := httptest.NewRequest(http.MethodGet, "/v0/markets/77/leaderboard?limit=25", nil)
-	rr := httptest.NewRecorder()
-	router := mux.NewRouter()
-	router.HandleFunc("/v0/markets/{id}/leaderboard", handler.MarketLeaderboard)
-
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rr.Code)
-	}
-
-	var resp handlers.SuccessEnvelope[dto.LeaderboardResponse]
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if len(resp.Result.Leaderboard) != 1 || resp.Result.Leaderboard[0].Username != "stale_snapshot_alice" {
-		t.Fatalf("unexpected leaderboard payload: %+v", resp.Result.Leaderboard)
-	}
-	if resp.Result.Freshness == nil || !resp.Result.Freshness.IsStale {
-		t.Fatalf("expected stale freshness metadata, got %+v", resp.Result.Freshness)
+	if !resp.OK || resp.Result.BetCount != 3 || resp.Result.YesVolume != 20 || resp.Result.NoVolume != 5 || resp.Result.ParticipantCount != 2 {
+		t.Fatalf("unexpected public activity: %+v", resp.Result)
 	}
 }
 
 func TestMarketLeaderboardHandler_FailureEnvelope(t *testing.T) {
 	svc := &MockService{}
-	svc.MarketLeaderboardFn = func(ctx context.Context, marketID int64, p dmarkets.Page) ([]*dmarkets.LeaderboardRow, error) {
-		return nil, errors.New("boom")
+	svc.PublicActivityFn = func(context.Context, int64) (dmarkets.PublicTradingActivity, error) {
+		return dmarkets.PublicTradingActivity{}, errors.New("boom")
 	}
 
 	handler := NewHandler(svc, nil, security.NewSecurityService())
@@ -261,26 +134,6 @@ func TestMarketLeaderboardHandler_FailureEnvelope(t *testing.T) {
 	if resp.Reason != string(handlers.ReasonInternalError) {
 		t.Fatalf("expected reason %q, got %q", handlers.ReasonInternalError, resp.Reason)
 	}
-}
-
-type readModelLeaderboardServiceMock struct {
-	MockService
-	ReadModelFn func(ctx context.Context, marketID int64, p dmarkets.Page) (*dmarkets.MarketLeaderboardSnapshot, error)
-	RefreshFn   func(ctx context.Context, marketID int64) (*dmarkets.MarketLeaderboardSnapshot, error)
-}
-
-func (m *readModelLeaderboardServiceMock) GetMarketLeaderboardReadModel(ctx context.Context, marketID int64, p dmarkets.Page) (*dmarkets.MarketLeaderboardSnapshot, error) {
-	if m.ReadModelFn != nil {
-		return m.ReadModelFn(ctx, marketID, p)
-	}
-	return nil, nil
-}
-
-func (m *readModelLeaderboardServiceMock) RefreshMarketLeaderboardSnapshot(ctx context.Context, marketID int64) (*dmarkets.MarketLeaderboardSnapshot, error) {
-	if m.RefreshFn != nil {
-		return m.RefreshFn(ctx, marketID)
-	}
-	return nil, nil
 }
 
 func TestListUserOwnedMarketsHandlerRequiresLogin(t *testing.T) {

@@ -101,6 +101,28 @@ func WriteFailure(w http.ResponseWriter, err *authsvc.AuthError) error {
 	return handlers.WriteFailure(w, StatusCode(err), FailureReason(err))
 }
 
+// RequireOwnAccount allows a private financial read only when the authenticated
+// account is the account named by the request. Another account, including an
+// admin, is denied. Admin account lists stay on the admin user route.
+// The denial body is the shared reason code and does not include financial data.
+func RequireOwnAccount(w http.ResponseWriter, r *http.Request, auth authsvc.Authenticator, username string) bool {
+	if auth == nil {
+		_ = handlers.WriteFailure(w, http.StatusInternalServerError, handlers.ReasonInternalError)
+		return false
+	}
+
+	user, err := auth.CurrentUser(r)
+	if err != nil {
+		_ = WriteFailure(w, err)
+		return false
+	}
+	if user == nil || user.Username == "" || user.Username != username {
+		_ = handlers.WriteFailure(w, http.StatusForbidden, handlers.ReasonAuthorizationDenied)
+		return false
+	}
+	return true
+}
+
 func message(err *authsvc.AuthError) string {
 	if err == nil || err.Message == "" {
 		return "authentication failed"

@@ -438,7 +438,7 @@ export function readMarketList() {
 }
 
 export function checkProbes() {
-  for (const path of ['/health', '/readyz', '/ops/status']) {
+  for (const path of ['/health', '/readyz']) {
     const response = http.get(`${BASE_URL}${path}`);
     check(response, {
       [`${path} returned 200`]: (r) => r.status === 200,

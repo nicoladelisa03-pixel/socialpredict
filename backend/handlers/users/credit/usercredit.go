@@ -7,12 +7,14 @@ import (
 	"github.com/gorilla/mux"
 
 	"socialpredict/handlers"
+	"socialpredict/handlers/authhttp"
 	"socialpredict/handlers/users/dto"
 	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 )
 
-// GetUserCreditHandler returns an HTTP handler that responds with the user's available credit.
-func GetUserCreditHandler(svc dusers.ServiceInterface, maximumDebtAllowed int64) http.HandlerFunc {
+// GetUserCreditHandler returns an HTTP handler for the caller's own available credit.
+func GetUserCreditHandler(svc dusers.ServiceInterface, maximumDebtAllowed int64, auth authsvc.Authenticator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			_ = handlers.WriteFailure(w, http.StatusMethodNotAllowed, handlers.ReasonMethodNotAllowed)
@@ -22,6 +24,9 @@ func GetUserCreditHandler(svc dusers.ServiceInterface, maximumDebtAllowed int64)
 		username := mux.Vars(r)["username"]
 		if username == "" {
 			_ = handlers.WriteFailure(w, http.StatusBadRequest, handlers.ReasonInvalidRequest)
+			return
+		}
+		if !authhttp.RequireOwnAccount(w, r, auth, username) {
 			return
 		}
 

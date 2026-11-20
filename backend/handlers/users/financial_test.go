@@ -6,17 +6,44 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
 
 	"socialpredict/handlers"
 	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 )
+
+type financialAuthMock struct {
+	user *dusers.User
+	err  *authsvc.AuthError
+}
+
+func (m financialAuthMock) CurrentUser(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.user, nil
+}
+
+func (m financialAuthMock) RequireUser(r *http.Request) (*dusers.User, *authsvc.AuthError) {
+	return m.CurrentUser(r)
+}
+
+func (m financialAuthMock) RequireAdmin(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	return nil, &authsvc.AuthError{Kind: authsvc.ErrorKindAdminRequired}
+}
+
+func ownFinancialAccount(username string) financialAuthMock {
+	return financialAuthMock{user: &dusers.User{Username: username, UserType: "REGULAR"}}
+}
 
 type financialServiceMock struct {
 	snapshot map[string]int64
 	err      error
+	calls    int
 }
 
 func (m *financialServiceMock) GetPublicUser(context.Context, string) (*dusers.PublicUser, error) {
@@ -40,6 +67,7 @@ func (m *financialServiceMock) GetUserPortfolio(context.Context, string) (*duser
 }
 
 func (m *financialServiceMock) GetUserFinancials(context.Context, string) (map[string]int64, error) {
+	m.calls++
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -76,7 +104,7 @@ func (m *financialServiceMock) ChangePassword(context.Context, string, string, s
 
 func TestGetUserFinancialHandlerSuccess(t *testing.T) {
 	mock := &financialServiceMock{snapshot: map[string]int64{"accountBalance": 500}}
-	handler := GetUserFinancialHandler(mock)
+	handler := GetUserFinancialHandler(mock, ownFinancialAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/users/alice/financial", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
@@ -99,7 +127,7 @@ func TestGetUserFinancialHandlerSuccess(t *testing.T) {
 }
 
 func TestGetUserFinancialHandlerUserNotFound(t *testing.T) {
-	handler := GetUserFinancialHandler(&financialServiceMock{err: dusers.ErrUserNotFound})
+	handler := GetUserFinancialHandler(&financialServiceMock{err: dusers.ErrUserNotFound}, ownFinancialAccount("missing"))
 	req := httptest.NewRequest(http.MethodGet, "/v0/users/missing/financial", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "missing"})
 	rec := httptest.NewRecorder()
@@ -113,7 +141,7 @@ func TestGetUserFinancialHandlerUserNotFound(t *testing.T) {
 }
 
 func TestGetUserFinancialHandlerInternalError(t *testing.T) {
-	handler := GetUserFinancialHandler(&financialServiceMock{err: errors.New("boom")})
+	handler := GetUserFinancialHandler(&financialServiceMock{err: errors.New("boom")}, ownFinancialAccount("alice"))
 	req := httptest.NewRequest(http.MethodGet, "/v0/users/alice/financial", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
 	rec := httptest.NewRecorder()
@@ -127,7 +155,7 @@ func TestGetUserFinancialHandlerInternalError(t *testing.T) {
 }
 
 func TestGetUserFinancialHandlerInvalidMethod(t *testing.T) {
-	handler := GetUserFinancialHandler(&financialServiceMock{})
+	handler := GetUserFinancialHandler(&financialServiceMock{}, ownFinancialAccount("alice"))
 	req := httptest.NewRequest(http.MethodPost, "/v0/users/alice/financial", nil)
 	rec := httptest.NewRecorder()
 
@@ -137,6 +165,57 @@ func TestGetUserFinancialHandlerInvalidMethod(t *testing.T) {
 		t.Fatalf("expected status 405, got %d", rec.Code)
 	}
 	requireFinancialFailureReason(t, rec, handlers.ReasonMethodNotAllowed)
+}
+
+func TestGetUserFinancialHandlerRequiresOwnAccount(t *testing.T) {
+	mock := &financialServiceMock{snapshot: map[string]int64{"accountBalance": 500}}
+
+	t.Run("anonymous", func(t *testing.T) {
+		handler := GetUserFinancialHandler(mock, financialAuthMock{
+			err: &authsvc.AuthError{Kind: authsvc.ErrorKindMissingToken},
+		})
+		req := httptest.NewRequest(http.MethodGet, "/v0/users/alice/financial", nil)
+		req = mux.SetURLVars(req, map[string]string{"username": "alice"})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401, got %d", rec.Code)
+		}
+		requireFinancialFailureReason(t, rec, handlers.ReasonInvalidToken)
+	})
+
+	t.Run("other user", func(t *testing.T) {
+		handler := GetUserFinancialHandler(mock, ownFinancialAccount("bob"))
+		req := httptest.NewRequest(http.MethodGet, "/v0/users/alice/financial", nil)
+		req = mux.SetURLVars(req, map[string]string{"username": "alice"})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected status 403, got %d", rec.Code)
+		}
+		requireFinancialFailureReason(t, rec, handlers.ReasonAuthorizationDenied)
+	})
+
+	t.Run("admin cannot read another account", func(t *testing.T) {
+		handler := GetUserFinancialHandler(mock, financialAuthMock{
+			user: &dusers.User{Username: "admin", UserType: "ADMIN"},
+		})
+		req := httptest.NewRequest(http.MethodGet, "/v0/users/alice/financial", nil)
+		req = mux.SetURLVars(req, map[string]string{"username": "alice"})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected status 403, got %d", rec.Code)
+		}
+		requireFinancialFailureReason(t, rec, handlers.ReasonAuthorizationDenied)
+		if strings.Contains(rec.Body.String(), "accountBalance") || strings.Contains(rec.Body.String(), "500") {
+			t.Fatalf("denial leaked financial data: %s", rec.Body.String())
+		}
+	})
+
+	if mock.calls != 0 {
+		t.Fatalf("denied reads called the financial service %d times", mock.calls)
+	}
 }
 
 func requireFinancialFailureReason(t *testing.T, rec *httptest.ResponseRecorder, reason handlers.FailureReason) {

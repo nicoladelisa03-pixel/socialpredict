@@ -97,8 +97,8 @@ x-route-family-migration-matrix:
     - family: operator-status
       paths:
         - /ops/status
-      success_contract: JSON runtime status `{live,ready,requestFailuresTotal,dbPool}`
-      failure_contract: same JSON status with HTTP 503 while not ready
+      success_contract: JSON runtime status `{live,ready,requestFailuresTotal,dbPool}` for an authenticated admin
+      failure_contract: ReasonResponse 401 or 403 without metrics; same JSON status with HTTP 503 while an admin finds the process not ready
       migration_state: intentional_operator_transport
       source: backend/server/server.go and internal/app/runtime
     - family: infra-docs
@@ -333,13 +333,17 @@ paths:
       operationId: getOperationalStatus
       summary: Get backend operational status
       description: >
-        Minimal operator-facing runtime status export for the first alert set:
-        backend down or unready, fatal startup failure before readiness opens,
-        severe server-side request-failure spikes, and database connection pool
-        saturation or wait-latency signals affected by pool tuning. The
+        Minimal operator-facing runtime status export for an authenticated
+        administrator: backend down or unready, severe server-side
+        request-failure spikes, and database connection pool saturation or
+        wait-latency signals. Anonymous callers receive 401 and other signed-in
+        accounts receive 403, without pool or failure counters. The
         request-failure count and pool snapshot are process-local and reset when
         the process restarts. This route is outside the `/v0` business namespace
-        and does not expose economy/accounting metrics.
+        and does not expose economy/accounting metrics. `/health` and `/readyz`
+        remain the anonymous liveness and readiness probes.
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Backend is live, ready, and serving operator status.
@@ -353,8 +357,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationalStatus'
+        '401':
+          description: Login required or token invalid. No operational metrics are returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not an administrator, or a password change is required. No operational metrics are returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
         '503':
-          description: Backend is not live or is not ready to serve traffic.
+          description: An administrator found the backend not live or not ready to serve traffic.
           headers:
             Cache-Control:
               description: Operator status is runtime state and must not be cached.
@@ -761,8 +777,8 @@ paths:
     get:
       tags: [Markets]
       operationId: listMarketGroupBets
-      summary: List grouped market bets
-      description: Returns a single globally sorted bet feed across all child markets in a multiple-choice binary group.
+      summary: Public totals for a market group
+      description: Returns trade count, YES/NO volume, and participant count for a visible market group. It does not name traders or return individual bets, holdings, or profit.
       parameters:
         - in: path
           name: id
@@ -785,11 +801,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Grouped bets returned successfully.
+          description: Public group totals returned successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketGroupBetsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid group ID.
           content:
@@ -819,8 +835,8 @@ paths:
     get:
       tags: [Markets]
       operationId: listMarketGroupPositions
-      summary: List grouped market positions
-      description: Returns user positions aggregated across child markets with per-answer breakdowns.
+      summary: Public totals for a market group
+      description: Returns the same public trade count, YES/NO volume, and participant count as the group bet route. It does not name holders.
       parameters:
         - in: path
           name: id
@@ -843,11 +859,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Grouped positions returned successfully.
+          description: Public group totals returned successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketGroupPositionsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid group ID.
           content:
@@ -877,8 +893,8 @@ paths:
     get:
       tags: [Markets]
       operationId: getMarketGroupLeaderboard
-      summary: Get grouped market leaderboard
-      description: Returns an aggregate leaderboard across child markets with per-answer profit breakdowns.
+      summary: Public totals for a market group
+      description: Returns the same public totals as the group bet route. It does not rank traders or return profit.
       parameters:
         - in: path
           name: id
@@ -901,11 +917,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Grouped leaderboard returned successfully.
+          description: Public group totals returned successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketGroupLeaderboardEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid group ID.
           content:
@@ -2056,8 +2072,8 @@ paths:
     get:
       tags: [Markets]
       operationId: getMarketLeaderboard
-      summary: Get market leaderboard
-      description: Ranks participants in a single market by profit and traded volume.
+      summary: Public totals for a market
+      description: Returns trade count, YES/NO volume, and participant count. It does not rank traders or return profit, spend, or share counts.
       parameters:
         - in: path
           name: id
@@ -2087,7 +2103,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketLeaderboardEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid market ID.
           content:
@@ -2305,8 +2321,8 @@ paths:
     get:
       tags: [Bets, Markets]
       operationId: listMarketBets
-      summary: List bets for a market
-      description: Returns the bet history for a specific market.
+      summary: Public totals for a market
+      description: Returns trade count, YES/NO volume, and participant count for a visible market. It does not name traders or return individual bets.
       parameters:
         - in: path
           name: marketId
@@ -2322,7 +2338,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketBetsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid market ID.
           content:
@@ -2352,8 +2368,8 @@ paths:
     get:
       tags: [Markets]
       operationId: listMarketPositions
-      summary: List user positions for a market
-      description: Returns all user positions (YES/NO shares) in a specific market.
+      summary: Public totals for a market
+      description: Returns the same public trade count, YES/NO volume, and participant count as the bet route. It does not name holders or return individual share counts.
       parameters:
         - in: path
           name: marketId
@@ -2369,7 +2385,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketPositionsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid market ID.
           content:
@@ -2393,8 +2409,12 @@ paths:
     get:
       tags: [Markets]
       operationId: getMarketUserPosition
-      summary: Get a user's position in a market
-      description: Returns the holdings for a specific user in the given market.
+      summary: Get the caller's position in a market
+      description: >
+        Returns the caller's holdings in the given market. Anonymous callers and
+        other accounts receive an authorization failure and no position data.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: marketId
@@ -2419,6 +2439,18 @@ paths:
                 $ref: '#/components/schemas/UserPositionEnvelopeResponse'
         '400':
           description: Invalid market ID or username.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -3129,8 +3161,13 @@ paths:
     get:
       tags: [Users]
       operationId: getUserCredit
-      summary: Get user credit
-      description: Returns the user's available credit limit, treating missing users as max debt.
+      summary: Get the caller's available credit
+      description: >
+        Returns the authenticated account's available credit. Anonymous callers
+        and other accounts are denied. A missing record for the caller is still
+        treated as the configured maximum debt.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: username
@@ -3147,6 +3184,18 @@ paths:
                 $ref: '#/components/schemas/UserCreditResponse'
         '400':
           description: Username missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -5202,8 +5251,12 @@ paths:
     get:
       tags: [Users]
       operationId: getUserPortfolio
-      summary: Get user portfolio
-      description: Returns the markets and share counts for a user's portfolio.
+      summary: Get the caller's portfolio
+      description: >
+        Returns the markets and share counts for the authenticated account.
+        Anonymous callers and other accounts are denied.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: username
@@ -5220,6 +5273,18 @@ paths:
                 $ref: '#/components/schemas/PortfolioResponse'
         '400':
           description: Username missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -5241,8 +5306,12 @@ paths:
     get:
       tags: [Users]
       operationId: getUserFinancialSnapshot
-      summary: Get user financial snapshot
-      description: Returns a map of financial metrics (e.g., balances and exposures) by key.
+      summary: Get the caller's financial snapshot
+      description: >
+        Returns the authenticated account's balances, exposures, and profit
+        figures. Anonymous callers and other accounts are denied.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: username
@@ -5259,6 +5328,18 @@ paths:
                 $ref: '#/components/schemas/UserFinancialResponse'
         '400':
           description: Username missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -5464,12 +5545,11 @@ paths:
     get:
       tags: [Users]
       operationId: getUserFinancialReadModelSummary
-      summary: Get authenticated user financial read-model summary
+      summary: Get the caller's financial read-model summary
       description: >
-        Returns a cached/read-model financial summary for game transparency.
-        Any logged-in user may view another user's game-financial summary, but
-        logged-out visitors cannot access this endpoint. The response includes
-        freshness metadata and must not be used for transaction decisions.
+        Returns the authenticated account's cached financial summary, including
+        freshness metadata. Another account cannot read it. The response must
+        not be used for transaction decisions.
       security:
         - bearerAuth: []
       parameters:
@@ -5494,6 +5574,12 @@ paths:
                 $ref: '#/components/schemas/ReasonResponse'
         '401':
           description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -5577,8 +5663,8 @@ paths:
     get:
       tags: [Metrics]
       operationId: getGlobalLeaderboard
-      summary: Get global leaderboard
-      description: Returns a leaderboard ranking users by profitability across all markets.
+      summary: Public participant count
+      description: Returns how many accounts have ranked activity. It does not name those accounts or return profit, value, or spend. A private visibility setting can still require login before this count is returned.
       responses:
         '200':
           description: Global leaderboard returned successfully.
@@ -6236,9 +6322,48 @@ components:
           type: boolean
           enum: [true]
         result:
-          type: array
-          items:
-            $ref: '#/components/schemas/GlobalLeaderboardEntry'
+          $ref: '#/components/schemas/PublicLeaderboardSummary'
+      required: [ok, result]
+
+    PublicLeaderboardSummary:
+      type: object
+      required: [participantCount]
+      properties:
+        participantCount:
+          type: integer
+          minimum: 0
+        freshness:
+          $ref: '#/components/schemas/ReadModelFreshness'
+
+    PublicTradingActivity:
+      type: object
+      required: [betCount, yesVolume, noVolume, participantCount]
+      properties:
+        groupId:
+          type: integer
+          format: int64
+          description: Present when the totals belong to a market group.
+        betCount:
+          type: integer
+          minimum: 0
+        yesVolume:
+          type: integer
+          format: int64
+        noVolume:
+          type: integer
+          format: int64
+        participantCount:
+          type: integer
+          minimum: 0
+
+    PublicTradingActivityEnvelopeResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/PublicTradingActivity'
       required: [ok, result]
 
     MarketLeaderboardEnvelopeResponse:

@@ -7,7 +7,8 @@ const UserFinancialStatementsLayout = ({ username }) => {
     const [financialData, setFinancialData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const { isLoggedIn, token } = useAuth();
+    const { isLoggedIn, token, username: signedInUsername } = useAuth();
+    const ownsAccount = Boolean(token) && signedInUsername === username;
 
     useEffect(() => {
         const fetchFinancialData = async () => {
@@ -33,14 +34,14 @@ const UserFinancialStatementsLayout = ({ username }) => {
             }
         };
 
-        if (username && token) {
+        if (ownsAccount) {
             fetchFinancialData();
         } else {
             setFinancialData(null);
             setError(null);
             setLoading(false);
         }
-    }, [username, token]);
+    }, [ownsAccount, username, token]);
 
     const formatValue = (value, isAmount = true) => {
         if (value === null || value === undefined) return 'N/A';
@@ -121,11 +122,17 @@ const UserFinancialStatementsLayout = ({ username }) => {
             <div className="bg-primary-background shadow-md rounded-lg p-6">
                 <div className="text-center">
                     <div className="text-xl font-semibold text-blue-100">
-                        {isLoggedIn ? 'No financial data available.' : 'Log in to see financials'}
+                        {ownsAccount
+                            ? 'No financial data available.'
+                            : isLoggedIn
+                                ? 'Financials are private.'
+                                : 'Log in to see your financials'}
                     </div>
-                    {!isLoggedIn && (
+                    {!ownsAccount && (
                         <div className="text-sm text-gray-400 mt-2">
-                            User financial summaries are visible to logged-in players.
+                            {isLoggedIn
+                                ? 'Only this account can see its balances and positions.'
+                                : 'Sign in to see your own balances and positions.'}
                         </div>
                     )}
                 </div>

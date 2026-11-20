@@ -47,3 +47,4 @@ Product scope is in `PROJECT.md`. Working rules are in `AGENTS.md`.
 
 10. [ ] Test the application and prepare a secure invitation-only deployment.
     - Acceptance: the MVP checklist above is retested, secrets are not committed, and an invitation-only deploy target is written down. Publishing still waits on the host decision in `PROJECT.md`.
+    - Public markets now show probability, volume, and participant totals. Named bets, holdings, and profit stay private. This step is still open.

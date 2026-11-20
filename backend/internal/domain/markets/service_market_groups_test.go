@@ -367,6 +367,14 @@ func TestMarketGroupActivityAggregatesChildRows(t *testing.T) {
 	if alice.Username != "alice" || alice.YesSharesOwned != 3 || alice.NoSharesOwned != 4 || len(alice.Answers) != 2 {
 		t.Fatalf("unexpected grouped position: %+v", alice)
 	}
+
+	activity, err := service.GetPublicMarketGroupActivity(context.Background(), group.ID)
+	if err != nil {
+		t.Fatalf("GetPublicMarketGroupActivity returned error: %v", err)
+	}
+	if activity.BetCount != 2 || activity.YesVolume != 10 || activity.NoVolume != 7 || activity.ParticipantCount != 1 {
+		t.Fatalf("unexpected public group activity: %+v", activity)
+	}
 }
 
 func TestResolveMarketGroupExclusiveYesResolvesChildrenAndMarksParent(t *testing.T) {
@@ -772,5 +780,8 @@ func TestPublicGroupReadsHideProposedGroups(t *testing.T) {
 	}
 	if _, err := service.GetMarketGroupLeaderboardPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
 		t.Fatalf("GetMarketGroupLeaderboardPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetPublicMarketGroupActivity(context.Background(), group.ID); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetPublicMarketGroupActivity error = %v, want ErrMarketGroupNotFound", err)
 	}
 }

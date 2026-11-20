@@ -16,6 +16,7 @@ import (
 	authsvc "socialpredict/internal/service/auth"
 	configsvc "socialpredict/internal/service/config"
 	"socialpredict/logger"
+	"socialpredict/models"
 	"socialpredict/models/modelstesting"
 	"socialpredict/security"
 
@@ -163,7 +164,7 @@ func TestServerRegistersAndServesCoreRoutes(t *testing.T) {
 	}{
 		{"health", "/health", http.StatusOK},
 		{"readyz", "/readyz", http.StatusOK},
-		{"operator status", "/ops/status", http.StatusOK},
+		{"operator status", "/ops/status", http.StatusUnauthorized},
 		{"home", "/v0/home", http.StatusOK},
 		{"setup frontend", "/v0/setup/frontend", http.StatusOK},
 		{"markets", "/v0/markets?status=ACTIVE", http.StatusOK},
@@ -434,13 +435,15 @@ func TestReadyzChecksDatabaseAvailabilityAfterReadinessGateOpens(t *testing.T) {
 }
 
 func TestOperationalStatusRouteExportsRuntimeSignalsOnly(t *testing.T) {
-	t.Setenv("JWT_SIGNING_KEY", "test-secret-key")
+	t.Setenv("JWT_SIGNING_KEY", "test-secret-key-for-testing")
 
 	db := modelstesting.NewFakeDB(t)
 	readiness := appruntime.NewReadiness()
 	handler := buildTestHandlerWithConfig(t, db, modelstesting.GenerateEconomicConfig(), readiness)
+	admin := createLoginReadyUser(t, db, "opsadmin", "ADMIN")
 
 	req := httptest.NewRequest(http.MethodGet, "/ops/status", nil)
+	req.Header.Set("Authorization", "Bearer "+modelstesting.GenerateValidJWT(admin.Username))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -502,6 +505,84 @@ func TestOperationalStatusRouteExportsRuntimeSignalsOnly(t *testing.T) {
 	}
 	if status.DBPool.OpenConnections < status.DBPool.InUseConnections {
 		t.Fatalf("expected DB pool status to expose coherent connection counts: %+v", status.DBPool)
+	}
+}
+
+func TestOperationalStatusRequiresAdmin(t *testing.T) {
+	t.Setenv("JWT_SIGNING_KEY", "test-secret-key-for-testing")
+
+	db := modelstesting.NewFakeDB(t)
+	readiness := appruntime.NewReadiness()
+	readiness.MarkReady()
+	handler := buildTestHandlerWithConfig(t, db, modelstesting.GenerateEconomicConfig(), readiness)
+
+	regular := createLoginReadyUser(t, db, "opsviewer", "REGULAR")
+	admin := createLoginReadyUser(t, db, "opsadminok", "ADMIN")
+
+	anonymous := httptest.NewRequest(http.MethodGet, "/ops/status", nil)
+	anonymousRec := httptest.NewRecorder()
+	handler.ServeHTTP(anonymousRec, anonymous)
+	assertOperationalStatusDenied(t, anonymousRec, http.StatusUnauthorized, handlers.ReasonInvalidToken)
+
+	regularReq := httptest.NewRequest(http.MethodGet, "/ops/status", nil)
+	regularReq.Header.Set("Authorization", "Bearer "+modelstesting.GenerateValidJWT(regular.Username))
+	regularRec := httptest.NewRecorder()
+	handler.ServeHTTP(regularRec, regularReq)
+	assertOperationalStatusDenied(t, regularRec, http.StatusForbidden, handlers.ReasonAuthorizationDenied)
+
+	adminReq := httptest.NewRequest(http.MethodGet, "/ops/status", nil)
+	adminReq.Header.Set("Authorization", "Bearer "+modelstesting.GenerateValidJWT(admin.Username))
+	adminRec := httptest.NewRecorder()
+	handler.ServeHTTP(adminRec, adminReq)
+	if adminRec.Code != http.StatusOK {
+		t.Fatalf("expected admin /ops/status status 200, got %d: %s", adminRec.Code, adminRec.Body.String())
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(adminRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode admin /ops/status: %v", err)
+	}
+	assertJSONKeySet(t, payload, []string{"live", "ready", "requestFailuresTotal", "dbPool"})
+
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if health.Code != http.StatusOK || health.Body.String() != "live" {
+		t.Fatalf("expected anonymous /health live, got %d %q", health.Code, health.Body.String())
+	}
+	ready := httptest.NewRecorder()
+	handler.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if ready.Code != http.StatusOK || ready.Body.String() != "ready" {
+		t.Fatalf("expected anonymous /readyz ready, got %d %q", ready.Code, ready.Body.String())
+	}
+}
+
+func createLoginReadyUser(t *testing.T, db *gorm.DB, username, userType string) models.User {
+	t.Helper()
+	user := modelstesting.GenerateUser(username, 0)
+	user.UserType = userType
+	user.MustChangePassword = false
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create %s: %v", username, err)
+	}
+	if err := db.Model(&user).Update("must_change_password", false).Error; err != nil {
+		t.Fatalf("clear must_change_password for %s: %v", username, err)
+	}
+	return user
+}
+
+func assertOperationalStatusDenied(t *testing.T, rec *httptest.ResponseRecorder, status int, reason handlers.FailureReason) {
+	t.Helper()
+	if rec.Code != status {
+		t.Fatalf("expected status %d, got %d: %s", status, rec.Code, rec.Body.String())
+	}
+	var body handlers.FailureEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode denial: %v", err)
+	}
+	if body.OK || body.Reason != string(reason) {
+		t.Fatalf("expected reason %q, got %+v", reason, body)
+	}
+	if strings.Contains(rec.Body.String(), "dbPool") || strings.Contains(rec.Body.String(), "requestFailuresTotal") {
+		t.Fatalf("denial leaked operational metrics: %s", rec.Body.String())
 	}
 }
 

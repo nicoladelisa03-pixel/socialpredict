@@ -14,11 +14,37 @@ import (
 	"socialpredict/handlers"
 	"socialpredict/handlers/users/dto"
 	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 )
+
+type portfolioAuthMock struct {
+	user *dusers.User
+	err  *authsvc.AuthError
+}
+
+func (m portfolioAuthMock) CurrentUser(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.user, nil
+}
+
+func (m portfolioAuthMock) RequireUser(r *http.Request) (*dusers.User, *authsvc.AuthError) {
+	return m.CurrentUser(r)
+}
+
+func (m portfolioAuthMock) RequireAdmin(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	return nil, &authsvc.AuthError{Kind: authsvc.ErrorKindAdminRequired}
+}
+
+func ownPortfolioAccount(username string) portfolioAuthMock {
+	return portfolioAuthMock{user: &dusers.User{Username: username}}
+}
 
 type portfolioServiceMock struct {
 	portfolio *dusers.Portfolio
 	err       error
+	calls     int
 }
 
 func (m *portfolioServiceMock) GetPublicUser(context.Context, string) (*dusers.PublicUser, error) {
@@ -38,6 +64,7 @@ func (m *portfolioServiceMock) GetUserCredit(context.Context, string, int64) (in
 }
 
 func (m *portfolioServiceMock) GetUserPortfolio(context.Context, string) (*dusers.Portfolio, error) {
+	m.calls++
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -90,7 +117,7 @@ func TestGetPortfolioHandlerSuccess(t *testing.T) {
 		TotalSharesOwned: 15,
 	}
 	mock := &portfolioServiceMock{portfolio: portfolio}
-	handler := GetPortfolioHandler(mock)
+	handler := GetPortfolioHandler(mock, ownPortfolioAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/portfolio/alice", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
@@ -116,7 +143,7 @@ func TestGetPortfolioHandlerSuccess(t *testing.T) {
 }
 
 func TestGetPortfolioHandlerInvalidMethod(t *testing.T) {
-	handler := GetPortfolioHandler(&portfolioServiceMock{})
+	handler := GetPortfolioHandler(&portfolioServiceMock{}, ownPortfolioAccount("alice"))
 	req := httptest.NewRequest(http.MethodPost, "/v0/portfolio/alice", nil)
 	rec := httptest.NewRecorder()
 
@@ -130,7 +157,7 @@ func TestGetPortfolioHandlerInvalidMethod(t *testing.T) {
 
 func TestGetPortfolioHandlerServiceError(t *testing.T) {
 	mock := &portfolioServiceMock{err: errors.New("boom")}
-	handler := GetPortfolioHandler(mock)
+	handler := GetPortfolioHandler(mock, ownPortfolioAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/portfolio/alice", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
@@ -142,6 +169,32 @@ func TestGetPortfolioHandlerServiceError(t *testing.T) {
 		t.Fatalf("expected status 500, got %d", rec.Code)
 	}
 	requirePortfolioFailureReason(t, rec, handlers.ReasonInternalError)
+}
+
+func TestGetPortfolioHandlerRequiresOwnAccount(t *testing.T) {
+	mock := &portfolioServiceMock{portfolio: &dusers.Portfolio{TotalSharesOwned: 15}}
+	handler := GetPortfolioHandler(mock, portfolioAuthMock{
+		err: &authsvc.AuthError{Kind: authsvc.ErrorKindMissingToken},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v0/portfolio/alice", nil)
+	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+	requirePortfolioFailureReason(t, rec, handlers.ReasonInvalidToken)
+
+	handler = GetPortfolioHandler(mock, ownPortfolioAccount("bob"))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+	requirePortfolioFailureReason(t, rec, handlers.ReasonAuthorizationDenied)
+	if mock.calls != 0 {
+		t.Fatalf("denied portfolio read called the service %d times", mock.calls)
+	}
 }
 
 func requirePortfolioFailureReason(t *testing.T, rec *httptest.ResponseRecorder, reason handlers.FailureReason) {

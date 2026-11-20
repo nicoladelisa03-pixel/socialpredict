@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"socialpredict/internal/domain/boundary"
 	dmarkets "socialpredict/internal/domain/markets"
 	positionsmath "socialpredict/internal/domain/math/positions"
+	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 	"socialpredict/models"
 	"socialpredict/models/modelstesting"
 
@@ -217,30 +220,30 @@ func TestMarketPositionsHandlerWithService_IncludesZeroPositionUsers(t *testing.
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	var envelope handlers.SuccessEnvelope[[]userPositionResponse]
+	body := rec.Body.String()
+	for _, username := range users {
+		if strings.Contains(body, username) || strings.Contains(body, "username") {
+			t.Fatalf("public position activity named a trader: %s", body)
+		}
+	}
+	var envelope handlers.SuccessEnvelope[dmarkets.PublicTradingActivity]
 	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	if !envelope.OK {
 		t.Fatalf("expected ok=true, got false")
 	}
-
-	positions := envelope.Result
-
-	var locked *userPositionResponse
-	for i := range positions {
-		if positions[i].Username == "testuser03" {
-			locked = &positions[i]
-			break
+	active := 0
+	for _, position := range mockSvc.positions {
+		if position != nil && (position.YesSharesOwned > 0 || position.NoSharesOwned > 0) {
+			active++
 		}
 	}
-
-	if locked == nil {
-		t.Fatalf("expected locked bettor to be present in handler response: %+v", positions)
+	if envelope.Result.ParticipantCount != active {
+		t.Fatalf("participantCount = %d, want %d", envelope.Result.ParticipantCount, active)
 	}
-
-	if locked.YesSharesOwned != 0 || locked.NoSharesOwned != 0 || locked.Value != 0 {
-		t.Fatalf("expected zero-valued position for locked bettor, got %+v", locked)
+	if envelope.Result.BetCount != 0 || envelope.Result.YesVolume != 0 || envelope.Result.NoVolume != 0 {
+		t.Fatalf("position route must not invent bet rows: %+v", envelope.Result)
 	}
 
 	var totals models.Bet
@@ -288,84 +291,24 @@ func TestMarketPositionsHandlerWithService_UsesPaginationQuery(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if mockSvc.page == nil {
-		t.Fatalf("expected paginated service method to be called")
-	}
-	if mockSvc.page.Limit != 20 || mockSvc.page.Offset != 40 {
-		t.Fatalf("expected page limit=20 offset=40, got %+v", *mockSvc.page)
-	}
-}
-
-func TestMarketPositionsHandlerWithService_UsesSnapshotFreshnessWhenAvailable(t *testing.T) {
-	generatedAt := time.Now().UTC().Add(-3 * time.Minute)
-	mockSvc := &readModelPositionsService{
-		mockPositionsService: mockPositionsService{
-			positionsPage: dmarkets.MarketPositions{
-				{Username: "raw_alice", MarketID: 7, YesSharesOwned: 99},
-			},
-		},
-		readModel: &dmarkets.MarketPositionsSnapshot{
-			MarketID:    7,
-			GeneratedAt: generatedAt,
-			Source:      "read_model",
-			Positions: dmarkets.MarketPositions{
-				{Username: "snapshot_alice", MarketID: 7, YesSharesOwned: 3},
-			},
-		},
-	}
-	handler := MarketPositionsHandlerWithService(mockSvc)
-
-	req := httptest.NewRequest(http.MethodGet, "/v0/markets/positions/7?limit=20&offset=0", nil)
-	req = mux.SetURLVars(req, map[string]string{"marketId": "7"})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
-	}
 	if mockSvc.page != nil {
-		t.Fatalf("raw paginated position calculation should not be used when snapshot is available")
+		t.Fatalf("public position activity must not use a named page")
 	}
-
-	var resp handlers.SuccessEnvelope[marketPositionsResponse]
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode success envelope: %v", err)
-	}
-	if len(resp.Result.Positions) != 1 || resp.Result.Positions[0].Username != "snapshot_alice" {
-		t.Fatalf("unexpected positions payload: %+v", resp.Result.Positions)
-	}
-	if resp.Result.Freshness == nil {
-		t.Fatalf("expected freshness metadata")
-	}
-	if !resp.Result.Freshness.GeneratedAt.Equal(generatedAt) {
-		t.Fatalf("freshness generatedAt = %s, want %s", resp.Result.Freshness.GeneratedAt, generatedAt)
-	}
-	if resp.Result.Freshness.TargetFreshnessSeconds != int(dmarkets.MarketPositionsSnapshotTargetFreshness.Seconds()) {
-		t.Fatalf("freshness target = %d, want %d", resp.Result.Freshness.TargetFreshnessSeconds, int(dmarkets.MarketPositionsSnapshotTargetFreshness.Seconds()))
-	}
-	if resp.Result.Freshness.TransactionSafeRead {
-		t.Fatalf("positions snapshot must not be marked transaction safe")
+	if strings.Contains(rec.Body.String(), "alice") || strings.Contains(rec.Body.String(), "username") {
+		t.Fatalf("public position activity named a trader: %s", rec.Body.String())
 	}
 }
 
-func TestMarketPositionsHandlerWithService_ServesStaleSnapshotWithoutRefresh(t *testing.T) {
-	generatedAt := time.Now().UTC().Add(-2 * dmarkets.MarketPositionsSnapshotTargetFreshness)
-	mockSvc := &readModelPositionsService{
-		readModel: &dmarkets.MarketPositionsSnapshot{
-			MarketID:    7,
-			GeneratedAt: generatedAt,
-			Source:      "read_model",
-			IsStale:     true,
-			StaleReason: "bet_accepted",
-			Positions: dmarkets.MarketPositions{
-				{Username: "stale_snapshot_alice", MarketID: 7, YesSharesOwned: 3},
-			},
+func TestMarketPositionsHandlerWithService_DoesNotPublishSnapshotNames(t *testing.T) {
+	mockSvc := &mockPositionsService{
+		positions: dmarkets.MarketPositions{
+			{Username: "holder", MarketID: 7, YesSharesOwned: 3},
 		},
 	}
 	handler := MarketPositionsHandlerWithService(mockSvc)
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/markets/positions/7?limit=20&offset=0", nil)
+	req.Header.Set("Authorization", "Bearer regular-user")
 	req = mux.SetURLVars(req, map[string]string{"marketId": "7"})
 	rec := httptest.NewRecorder()
 
@@ -374,26 +317,22 @@ func TestMarketPositionsHandlerWithService_ServesStaleSnapshotWithoutRefresh(t *
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if mockSvc.refreshCalls != 0 {
-		t.Fatalf("stale positions snapshot should not refresh on read, got %d refreshes", mockSvc.refreshCalls)
+	if strings.Contains(rec.Body.String(), "holder") || strings.Contains(rec.Body.String(), "username") || strings.Contains(rec.Body.String(), "yesSharesOwned") {
+		t.Fatalf("public position activity exposed a holding: %s", rec.Body.String())
 	}
-
-	var resp handlers.SuccessEnvelope[marketPositionsResponse]
+	var resp handlers.SuccessEnvelope[dmarkets.PublicTradingActivity]
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode success envelope: %v", err)
 	}
-	if len(resp.Result.Positions) != 1 || resp.Result.Positions[0].Username != "stale_snapshot_alice" {
-		t.Fatalf("unexpected positions payload: %+v", resp.Result.Positions)
-	}
-	if resp.Result.Freshness == nil || !resp.Result.Freshness.IsStale {
-		t.Fatalf("expected stale freshness metadata, got %+v", resp.Result.Freshness)
+	if resp.Result.ParticipantCount != 1 {
+		t.Fatalf("participantCount = %d, want 1", resp.Result.ParticipantCount)
 	}
 }
 
 func TestMarketUserPositionHandlerWithService_FailureEnvelope(t *testing.T) {
 	handler := MarketUserPositionHandlerWithService(&mockUserPositionService{
 		mockPositionsService: mockPositionsService{err: errors.New("boom")},
-	})
+	}, positionAccount("alice"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v0/markets/positions/77/alice", nil)
 	req = mux.SetURLVars(req, map[string]string{
@@ -417,41 +356,72 @@ func TestMarketUserPositionHandlerWithService_FailureEnvelope(t *testing.T) {
 	}
 }
 
-type readModelPositionsService struct {
-	mockPositionsService
-	readModel    *dmarkets.MarketPositionsSnapshot
-	refreshCalls int
+type positionAuthMock struct {
+	user *dusers.User
+	err  *authsvc.AuthError
 }
 
-func (m *readModelPositionsService) GetMarketPositionsReadModel(ctx context.Context, marketID int64, p dmarkets.Page) (*dmarkets.MarketPositionsSnapshot, error) {
-	if m.readModel == nil {
-		return nil, nil
+func (m positionAuthMock) CurrentUser(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	if m.err != nil {
+		return nil, m.err
 	}
-	return &dmarkets.MarketPositionsSnapshot{
-		MarketID:            m.readModel.MarketID,
-		Positions:           m.readModel.Positions,
-		GeneratedAt:         m.readModel.GeneratedAt,
-		Source:              m.readModel.Source,
-		TransactionSafeRead: m.readModel.TransactionSafeRead,
-		IsStale:             m.readModel.IsStale,
-		StaleReason:         m.readModel.StaleReason,
-		MarkedStaleAt:       m.readModel.MarkedStaleAt,
-	}, nil
+	return m.user, nil
 }
 
-func (m *readModelPositionsService) RefreshMarketPositionsSnapshot(ctx context.Context, marketID int64) (*dmarkets.MarketPositionsSnapshot, error) {
-	m.refreshCalls++
-	return m.readModel, nil
+func (m positionAuthMock) RequireUser(r *http.Request) (*dusers.User, *authsvc.AuthError) {
+	return m.CurrentUser(r)
+}
+
+func (m positionAuthMock) RequireAdmin(*http.Request) (*dusers.User, *authsvc.AuthError) {
+	return nil, &authsvc.AuthError{Kind: authsvc.ErrorKindAdminRequired}
+}
+
+func positionAccount(username string) positionAuthMock {
+	return positionAuthMock{user: &dusers.User{Username: username}}
 }
 
 type mockUserPositionService struct {
 	mockPositionsService
 	position *dmarkets.UserPosition
+	calls    int
 }
 
 func (m *mockUserPositionService) GetUserPositionInMarket(ctx context.Context, marketID int64, username string) (*dmarkets.UserPosition, error) {
+	m.calls++
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.position, nil
+}
+
+func TestMarketUserPositionHandlerRequiresOwnAccount(t *testing.T) {
+	mock := &mockUserPositionService{position: &dmarkets.UserPosition{Username: "alice", YesSharesOwned: 4}}
+	req := httptest.NewRequest(http.MethodGet, "/v0/markets/positions/7/alice", nil)
+	req = mux.SetURLVars(req, map[string]string{"marketId": "7", "username": "alice"})
+
+	handler := MarketUserPositionHandlerWithService(mock, positionAuthMock{
+		err: &authsvc.AuthError{Kind: authsvc.ErrorKindMissingToken},
+	})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	handler = MarketUserPositionHandlerWithService(mock, positionAccount("bob"))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if mock.calls != 0 {
+		t.Fatalf("denied position read called the service %d times", mock.calls)
+	}
+
+	handler = MarketUserPositionHandlerWithService(mock, positionAccount("alice"))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected own position status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
 }

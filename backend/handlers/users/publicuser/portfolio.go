@@ -7,12 +7,14 @@ import (
 	"github.com/gorilla/mux"
 
 	"socialpredict/handlers"
+	"socialpredict/handlers/authhttp"
 	"socialpredict/handlers/users/dto"
 	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 )
 
-// GetPortfolioHandler returns an HTTP handler that responds with a user's portfolio by delegating to the users service.
-func GetPortfolioHandler(svc dusers.ServiceInterface) http.HandlerFunc {
+// GetPortfolioHandler returns an HTTP handler for the caller's own portfolio.
+func GetPortfolioHandler(svc dusers.ServiceInterface, auth authsvc.Authenticator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			_ = handlers.WriteFailure(w, http.StatusMethodNotAllowed, handlers.ReasonMethodNotAllowed)
@@ -22,6 +24,9 @@ func GetPortfolioHandler(svc dusers.ServiceInterface) http.HandlerFunc {
 		username := mux.Vars(r)["username"]
 		if username == "" {
 			_ = handlers.WriteFailure(w, http.StatusBadRequest, handlers.ReasonInvalidRequest)
+			return
+		}
+		if !authhttp.RequireOwnAccount(w, r, auth, username) {
 			return
 		}
 
