@@ -6,6 +6,7 @@ import Footer from './components/footer/Footer';
 import AppRoutes from './helpers/AppRoutes';
 import '../index.css';
 import Sidebar from './components/sidebar/Sidebar';
+import { SITE_NAME } from './config';
 
 function ErrorFallback({ error, resetErrorBoundary }) {
   const showDiagnosticDetails = import.meta.env.DEV && error?.message;
@@ -18,7 +19,7 @@ function ErrorFallback({ error, resetErrorBoundary }) {
     >
       <h1 className='text-4xl font-bold mb-4'>Oops! Something went wrong.</h1>
       <p className='text-xl mb-8'>
-        We could not load this part of SocialPredict. Please try again.
+        We could not load this part of {SITE_NAME}. Please try again.
       </p>
       {showDiagnosticDetails && (
         <details className='mb-8 max-w-2xl text-left'>

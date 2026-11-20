@@ -115,7 +115,7 @@ func SeedHomepage(db *gorm.DB, repoRoot string) error {
 		data = defaultHomeMD
 	} else {
 		// Fallback only if embedding failed
-		data = []byte("# Welcome to BrierFoxForecast\n\nThis is the seeded home page.")
+		data = []byte("<h1>Startup Predictions</h1>\n<p>This is the seeded home page.</p>")
 	}
 
 	// Create renderer for sanitization

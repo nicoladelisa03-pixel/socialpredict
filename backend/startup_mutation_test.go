@@ -31,6 +31,10 @@ func TestRunStartupMutationsWriterRunsMigrationsThenSeeds(t *testing.T) {
 			calls = append(calls, "seedHomepage")
 			return nil
 		},
+		seedStartups: func(*gorm.DB) error {
+			calls = append(calls, "seedStartups")
+			return nil
+		},
 	}
 
 	err := runStartupMutations(nil, nil, appruntime.StartupMutationMode{Writer: true}, hooks)
@@ -38,7 +42,7 @@ func TestRunStartupMutationsWriterRunsMigrationsThenSeeds(t *testing.T) {
 		t.Fatalf("runStartupMutations returned error: %v", err)
 	}
 
-	want := []string{"migrate", "seedUsers", "seedHomepage"}
+	want := []string{"migrate", "seedUsers", "seedHomepage", "seedStartups"}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls = %v, want %v", calls, want)
 	}
@@ -61,6 +65,10 @@ func TestRunStartupMutationsNonWriterOnlyVerifies(t *testing.T) {
 		},
 		seedHomepage: func(*gorm.DB, string) error {
 			calls = append(calls, "seedHomepage")
+			return nil
+		},
+		seedStartups: func(*gorm.DB) error {
+			calls = append(calls, "seedStartups")
 			return nil
 		},
 	}
@@ -90,6 +98,10 @@ func TestRunStartupMutationsWriterStopsBeforeSeedsOnMigrationFailure(t *testing.
 		},
 		seedHomepage: func(*gorm.DB, string) error {
 			calls = append(calls, "seedHomepage")
+			return nil
+		},
+		seedStartups: func(*gorm.DB) error {
+			calls = append(calls, "seedStartups")
 			return nil
 		},
 	}

@@ -367,6 +367,14 @@ func TestMarketGroupActivityAggregatesChildRows(t *testing.T) {
 	if alice.Username != "alice" || alice.YesSharesOwned != 3 || alice.NoSharesOwned != 4 || len(alice.Answers) != 2 {
 		t.Fatalf("unexpected grouped position: %+v", alice)
 	}
+
+	activity, err := service.GetPublicMarketGroupActivity(context.Background(), group.ID)
+	if err != nil {
+		t.Fatalf("GetPublicMarketGroupActivity returned error: %v", err)
+	}
+	if activity.BetCount != 2 || activity.YesVolume != 10 || activity.NoVolume != 7 || activity.ParticipantCount != 1 {
+		t.Fatalf("unexpected public group activity: %+v", activity)
+	}
 }
 
 func TestResolveMarketGroupExclusiveYesResolvesChildrenAndMarksParent(t *testing.T) {
@@ -735,5 +743,45 @@ func TestResolveMarketGroupPaysSingleGroupWorkProfit(t *testing.T) {
 	}
 	if applied[0].username != "steward" || applied[0].amount != 6 || applied[0].txType != dusers.TransactionWorkProfit {
 		t.Fatalf("unexpected work-profit transaction: %+v", applied[0])
+	}
+}
+
+func TestPublicGroupReadsHideProposedGroups(t *testing.T) {
+	now := marketsTestTime()
+	group := &markets.MarketGroup{
+		ID:              44,
+		QuestionTitle:   "Hidden proposed group",
+		Description:     "secret group description",
+		LifecycleStatus: markets.MarketLifecycleProposed,
+		CreatorUsername: "moderator",
+		Members: []markets.MarketGroupMember{
+			{ID: 1, GroupID: 44, MarketID: 90, AnswerLabel: "Secret answer", DisplayOrder: 0},
+		},
+	}
+	repo := newProjectionRepo(func(repo *projectionRepo) {
+		repo.getMarketGroupFunc = func(context.Context, int64) (*markets.MarketGroup, error) {
+			return group, nil
+		}
+		repo.getByIDFunc = func(context.Context, int64) (*markets.Market, error) {
+			t.Fatal("public group read loaded a child of a proposed group")
+			return nil, nil
+		}
+	})
+	service := markets.NewService(repo, newNoopUserService(), newFixedClock(now), markets.Config{})
+
+	if _, err := service.GetMarketGroupOverview(context.Background(), group.ID); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupOverview error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetMarketGroupBetsPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupBetsPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetMarketGroupPositionsPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupPositionsPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetMarketGroupLeaderboardPage(context.Background(), group.ID, markets.Page{}); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetMarketGroupLeaderboardPage error = %v, want ErrMarketGroupNotFound", err)
+	}
+	if _, err := service.GetPublicMarketGroupActivity(context.Background(), group.ID); !errors.Is(err, markets.ErrMarketGroupNotFound) {
+		t.Fatalf("GetPublicMarketGroupActivity error = %v, want ErrMarketGroupNotFound", err)
 	}
 }

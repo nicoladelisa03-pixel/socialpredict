@@ -13,12 +13,9 @@ func (s *Service) ProjectProbability(ctx context.Context, req ProbabilityProject
 		return nil, err
 	}
 
-	market, err := s.repo.GetByID(ctx, req.MarketID)
+	market, err := s.publicMarketByID(ctx, req.MarketID)
 	if err != nil {
 		return nil, err
-	}
-	if market == nil {
-		return nil, ErrMarketNotFound
 	}
 
 	if err := s.probabilityValidator.ValidateMarket(market, s.clock.Now()); err != nil {

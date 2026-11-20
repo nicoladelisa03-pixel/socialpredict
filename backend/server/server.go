@@ -28,6 +28,7 @@ import (
 	metricshandlers "socialpredict/handlers/metrics"
 	positionshandlers "socialpredict/handlers/positions"
 	setuphandlers "socialpredict/handlers/setup"
+	startuphandlers "socialpredict/handlers/startups"
 	statshandlers "socialpredict/handlers/stats"
 	usershandlers "socialpredict/handlers/users"
 	usercredit "socialpredict/handlers/users/credit"
@@ -37,7 +38,9 @@ import (
 	"socialpredict/internal/app/readmodelinvalidation"
 	appruntime "socialpredict/internal/app/runtime"
 	dmarkets "socialpredict/internal/domain/markets"
+	dstartups "socialpredict/internal/domain/startups"
 	readmodelrepo "socialpredict/internal/repository/readmodels"
+	startuprepo "socialpredict/internal/repository/startups"
 	authsvc "socialpredict/internal/service/auth"
 	configsvc "socialpredict/internal/service/config"
 	"socialpredict/logger"
@@ -99,7 +102,8 @@ func buildRouter(openAPISpec []byte, swaggerUIFS fs.FS, db *gorm.DB, configServi
 
 	router := mux.NewRouter()
 	router.MethodNotAllowedHandler = methodNotAllowedHandler(router)
-	if err := registerInfraRoutes(router, openAPISpec, swaggerUIFS, db, readiness, operationalMetrics); err != nil {
+	authService := app.BuildApplicationWithConfigAndJWTSigningKey(db, configService, securityConfig.JWTSigningKey).GetAuthService()
+	if err := registerInfraRoutes(router, openAPISpec, swaggerUIFS, db, readiness, operationalMetrics, authService); err != nil {
 		return nil, err
 	}
 
@@ -164,11 +168,11 @@ type applicationReportingService interface {
 	metricshandlers.GlobalLeaderboardService
 }
 
-func registerInfraRoutes(router *mux.Router, openAPISpec []byte, swaggerUIFS fs.FS, db *gorm.DB, readiness *appruntime.Readiness, operationalMetrics *appruntime.OperationalMetrics) error {
+func registerInfraRoutes(router *mux.Router, openAPISpec []byte, swaggerUIFS fs.FS, db *gorm.DB, readiness *appruntime.Readiness, operationalMetrics *appruntime.OperationalMetrics, auth authsvc.Authenticator) error {
 	probe := appruntime.NewServingProbe(db, readiness)
 	router.Handle("/health", livenessHandler(probe)).Methods("GET")
 	router.Handle("/readyz", readinessHandler(probe)).Methods("GET")
-	router.Handle("/ops/status", operationalStatusHandler(probe, db, operationalMetrics)).Methods("GET")
+	router.Handle("/ops/status", operationalStatusHandler(probe, db, operationalMetrics, auth)).Methods("GET")
 
 	// OpenAPI spec endpoint
 	router.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
@@ -243,8 +247,18 @@ func readinessHandler(probe appruntime.ServingProbe) http.Handler {
 	})
 }
 
-func operationalStatusHandler(probe appruntime.ServingProbe, db *gorm.DB, operationalMetrics *appruntime.OperationalMetrics) http.Handler {
+func operationalStatusHandler(probe appruntime.ServingProbe, db *gorm.DB, operationalMetrics *appruntime.OperationalMetrics, auth authsvc.Authenticator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth == nil {
+			_ = handlers.WriteFailure(w, http.StatusInternalServerError, handlers.ReasonInternalError)
+			return
+		}
+		if _, authErr := auth.RequireAdmin(r); authErr != nil {
+			w.Header().Set("Cache-Control", "no-store")
+			_ = authhttp.WriteFailure(w, authErr)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), readinessProbeTimeout)
 		defer cancel()
 
@@ -496,13 +510,13 @@ func registerApplicationRoutes(router *mux.Router, db *gorm.DB, configService co
 	// handle market positions, get trades - using service injection from new locations
 	router.Handle("/v0/markets/bets/{marketId}", securityMiddleware(betshandlers.MarketBetsHandlerWithService(marketsService))).Methods("GET")
 	router.Handle("/v0/markets/positions/{marketId}", securityMiddleware(positionshandlers.MarketPositionsHandlerWithService(marketsService))).Methods("GET")
-	router.Handle("/v0/markets/positions/{marketId}/{username}", securityMiddleware(positionshandlers.MarketUserPositionHandlerWithService(marketsService))).Methods("GET")
+	router.Handle("/v0/markets/positions/{marketId}/{username}", securityMiddleware(positionshandlers.MarketUserPositionHandlerWithService(marketsService, authService))).Methods("GET")
 
 	// handle public user stuff
 	router.Handle("/v0/userinfo/{username}", securityMiddleware(usershandlers.GetPublicUserHandler(usersService))).Methods("GET")
-	router.Handle("/v0/usercredit/{username}", securityMiddleware(usercredit.GetUserCreditHandler(usersService, configService.Economics().User.MaximumDebtAllowed))).Methods("GET")
-	router.Handle("/v0/portfolio/{username}", securityMiddleware(publicuser.GetPortfolioHandler(usersService))).Methods("GET")
-	router.Handle("/v0/users/{username}/financial", securityMiddleware(usershandlers.GetUserFinancialHandler(usersService))).Methods("GET")
+	router.Handle("/v0/usercredit/{username}", securityMiddleware(usercredit.GetUserCreditHandler(usersService, configService.Economics().User.MaximumDebtAllowed, authService))).Methods("GET")
+	router.Handle("/v0/portfolio/{username}", securityMiddleware(publicuser.GetPortfolioHandler(usersService, authService))).Methods("GET")
+	router.Handle("/v0/users/{username}/financial", securityMiddleware(usershandlers.GetUserFinancialHandler(usersService, authService))).Methods("GET")
 	router.Handle("/v0/read/users/{username}/financial-summary", securityMiddleware(usershandlers.GetUserFinancialReadModelHandler(analyticsService, authService))).Methods("GET")
 	router.Handle("/v0/users/{username}/owned-markets", securityMiddleware(marketshandlers.ListUserOwnedMarketsHandler(marketsService, authService))).Methods("GET")
 
@@ -545,6 +559,18 @@ func registerApplicationRoutes(router *mux.Router, db *gorm.DB, configService co
 	router.Handle("/v0/admin/market-description-amendments/{id}", securityMiddleware(adminhandlers.ReviewMarketDescriptionAmendmentHandler(marketsService, authService))).Methods("PATCH")
 	router.Handle("/v0/admin/market-group-answer-additions", securityMiddleware(adminhandlers.ListMarketGroupAnswerAdditionsHandler(marketsService, authService))).Methods("GET")
 	router.Handle("/v0/admin/market-group-answer-additions/{id}", securityMiddleware(markDiscoveryStaleOnSuccess(readModelSnapshotRepo, "market_group_answer_added", adminhandlers.ReviewMarketGroupAnswerAdditionHandler(marketsService, authService)))).Methods("PATCH")
+	startupService := dstartups.NewService(startuprepo.NewGormRepository(db))
+	router.HandleFunc("/v0/startups", startuphandlers.ListHandler(startupService)).Methods("GET")
+	router.HandleFunc("/v0/startups/{slug}", startuphandlers.GetHandler(startupService)).Methods("GET")
+	router.HandleFunc("/v0/startups/{slug}/markets", startuphandlers.ListMarketsHandler(startupService)).Methods("GET")
+	router.HandleFunc("/v0/startups/{slug}/funding", startuphandlers.ListFundingHandler(startupService)).Methods("GET")
+	router.Handle("/v0/admin/startup-markets", securityMiddleware(startuphandlers.ListMarketAssociationsHandler(startupService, authService))).Methods("GET")
+	router.Handle("/v0/admin/startups", securityMiddleware(startuphandlers.CreateHandler(startupService, authService))).Methods("POST")
+	router.Handle("/v0/admin/startups/{slug}", securityMiddleware(startuphandlers.UpdateHandler(startupService, authService))).Methods("PATCH")
+	router.Handle("/v0/admin/startups/{slug}/funding", securityMiddleware(startuphandlers.CreateFundingHandler(startupService, authService))).Methods("POST")
+	router.Handle("/v0/admin/startups/{slug}/funding/{entryId}", securityMiddleware(startuphandlers.UpdateFundingHandler(startupService, authService))).Methods("PATCH")
+	router.Handle("/v0/admin/markets/{id}/startup", securityMiddleware(startuphandlers.SetMarketStartupHandler(startupService, authService))).Methods("PATCH")
+
 	router.Handle("/v0/admin/market-tags", securityMiddleware(adminhandlers.ListAdminMarketTagsHandler(marketsService, authService))).Methods("GET")
 	router.Handle("/v0/admin/market-tags", securityMiddleware(markDiscoveryStaleOnSuccess(readModelSnapshotRepo, "tag_catalog_changed", adminhandlers.CreateAdminMarketTagHandler(marketsService, authService)))).Methods("POST")
 	router.Handle("/v0/admin/market-tags/{slug}", securityMiddleware(markDiscoveryStaleOnSuccess(readModelSnapshotRepo, "tag_catalog_changed", adminhandlers.UpdateAdminMarketTagHandler(marketsService, authService)))).Methods("PATCH")

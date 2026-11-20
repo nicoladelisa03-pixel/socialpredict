@@ -2,6 +2,7 @@ package markets
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -15,12 +16,8 @@ func (s *Service) GetMarketPositions(ctx context.Context, marketID int64) (Marke
 		return nil, ErrInvalidInput
 	}
 
-	market, err := s.repo.GetByID(ctx, marketID)
-	if err != nil {
+	if _, err := s.publicMarketByID(ctx, marketID); err != nil {
 		return nil, err
-	}
-	if market == nil {
-		return nil, ErrMarketNotFound
 	}
 
 	positions, err := s.repo.ListMarketPositions(ctx, marketID)
@@ -53,11 +50,10 @@ func (s *Service) GetUserPositionInMarket(ctx context.Context, marketID int64, u
 		return nil, ErrInvalidInput
 	}
 
-	market, err := s.repo.GetByID(ctx, marketID)
-	if err != nil {
-		return nil, ErrMarketNotFound
-	}
-	if market == nil {
+	if _, err := s.publicMarketByID(ctx, marketID); err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			return nil, err
+		}
 		return nil, ErrMarketNotFound
 	}
 

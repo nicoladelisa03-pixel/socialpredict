@@ -133,7 +133,7 @@ function ReportingVisibilityEditor() {
           />
           <ToggleCard
             title="Global Leaderboard Public"
-            description="Allows logged-out visitors to view the global leaderboard. Turn this off when leaderboard transparency should be limited to logged-in users."
+            description="Allows logged-out visitors to see the public participant count. Names, profit, and spend stay private either way."
             checked={settings.globalLeaderboardPublic}
             onChange={(value) => handleToggle('globalLeaderboardPublic', value)}
           />

@@ -216,150 +216,51 @@ func TestResolveMarketGroupHandlerReportsUnpublishedChild(t *testing.T) {
 	}
 }
 
-func TestMarketGroupBetsHandlerReturnsGroupedBetRows(t *testing.T) {
-	now := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+func TestMarketGroupActivityHandlersHideParticipantRows(t *testing.T) {
 	service := &MockService{
-		MarketGroupBetsFn: func(_ context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupBetsPage, error) {
+		PublicGroupActivityFn: func(_ context.Context, groupID int64) (dmarkets.PublicTradingActivity, error) {
 			if groupID != 9 {
 				t.Fatalf("expected group id 9, got %d", groupID)
 			}
-			if p.Limit != 21 || p.Offset != 20 {
-				t.Fatalf("expected page limit=21 offset=20, got %+v", p)
-			}
-			return &dmarkets.MarketGroupBetsPage{
-				GroupID: groupID,
-				Total:   22,
-				Bets: []*dmarkets.MarketGroupBetDisplayInfo{{
-					AnswerMarketID: 101,
-					AnswerLabel:    "Spain",
-					DisplayOrder:   0,
-					Username:       "alice",
-					Outcome:        "YES",
-					Amount:         10,
-					Probability:    0.62,
-					PlacedAt:       now,
-				}},
-			}, nil
+			return dmarkets.PublicTradingActivity{BetCount: 4, YesVolume: 30, NoVolume: 12, ParticipantCount: 2}, nil
+		},
+		MarketGroupBetsFn: func(context.Context, int64, dmarkets.Page) (*dmarkets.MarketGroupBetsPage, error) {
+			t.Fatal("public group activity must not load named bets")
+			return nil, nil
 		},
 	}
-	req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/v0/market-groups/9/bets?limit=21&offset=20", nil), map[string]string{"id": "9"})
-	rec := httptest.NewRecorder()
-
-	NewHandler(service, nil, nil).MarketGroupBets(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
-	}
-	var response handlers.SuccessEnvelope[dto.MarketGroupBetsResponse]
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !response.OK || response.Result.Total != 22 || len(response.Result.Bets) != 1 {
-		t.Fatalf("unexpected response: %+v", response)
-	}
-	if response.Result.Freshness == nil ||
-		response.Result.Freshness.Source != "live" ||
-		response.Result.Freshness.TransactionSafeRead ||
-		response.Result.Freshness.TargetFreshnessSeconds != 0 {
-		t.Fatalf("unexpected freshness metadata: %+v", response.Result.Freshness)
-	}
-	if got := response.Result.Bets[0].AnswerLabel; got != "Spain" {
-		t.Fatalf("expected answer label Spain, got %q", got)
-	}
-}
-
-func TestMarketGroupPositionsHandlerReturnsGroupedPositionRows(t *testing.T) {
-	service := &MockService{
-		MarketGroupPositionsFn: func(_ context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupPositionsPage, error) {
-			if groupID != 9 {
-				t.Fatalf("expected group id 9, got %d", groupID)
-			}
-			return &dmarkets.MarketGroupPositionsPage{
-				GroupID: groupID,
-				Total:   1,
-				Positions: []*dmarkets.MarketGroupPositionRow{{
-					Username:       "alice",
-					YesSharesOwned: 7,
-					Value:          12,
-					Answers: []*dmarkets.MarketGroupPositionAnswer{{
-						AnswerMarketID: 101,
-						AnswerLabel:    "Spain",
-						DisplayOrder:   0,
-						YesSharesOwned: 7,
-						Value:          12,
-					}},
-				}},
-			}, nil
-		},
-	}
-	req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/v0/market-groups/9/positions", nil), map[string]string{"id": "9"})
-	rec := httptest.NewRecorder()
-
-	NewHandler(service, nil, nil).MarketGroupPositions(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
-	}
-	var response handlers.SuccessEnvelope[dto.MarketGroupPositionsResponse]
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !response.OK || len(response.Result.Positions) != 1 || len(response.Result.Positions[0].Answers) != 1 {
-		t.Fatalf("unexpected response: %+v", response)
-	}
-	if response.Result.Freshness == nil ||
-		response.Result.Freshness.Source != "live" ||
-		response.Result.Freshness.TransactionSafeRead ||
-		response.Result.Freshness.TargetFreshnessSeconds != 0 {
-		t.Fatalf("unexpected freshness metadata: %+v", response.Result.Freshness)
-	}
-}
-
-func TestMarketGroupLeaderboardHandlerReturnsGroupedLeaderboardRows(t *testing.T) {
-	service := &MockService{
-		MarketGroupLeaderboardFn: func(_ context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupLeaderboardPage, error) {
-			if groupID != 9 {
-				t.Fatalf("expected group id 9, got %d", groupID)
-			}
-			return &dmarkets.MarketGroupLeaderboardPage{
-				GroupID: groupID,
-				Total:   1,
-				Leaderboard: []*dmarkets.MarketGroupLeaderboardRow{{
-					Username:       "alice",
-					Profit:         5,
-					CurrentValue:   20,
-					TotalSpent:     15,
-					Position:       "YES",
-					YesSharesOwned: 4,
-					Rank:           1,
-					Answers: []*dmarkets.MarketGroupLeaderboardAnswer{{
-						AnswerMarketID: 101,
-						AnswerLabel:    "Spain",
-						Profit:         5,
-					}},
-				}},
-			}, nil
-		},
-	}
-	req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/v0/market-groups/9/leaderboard", nil), map[string]string{"id": "9"})
-	rec := httptest.NewRecorder()
-
-	NewHandler(service, nil, nil).MarketGroupLeaderboard(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
-	}
-	var response handlers.SuccessEnvelope[dto.MarketGroupLeaderboardResponse]
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !response.OK || len(response.Result.Leaderboard) != 1 || len(response.Result.Leaderboard[0].Answers) != 1 {
-		t.Fatalf("unexpected response: %+v", response)
-	}
-	if response.Result.Freshness == nil ||
-		response.Result.Freshness.Source != "live" ||
-		response.Result.Freshness.TransactionSafeRead ||
-		response.Result.Freshness.TargetFreshnessSeconds != 0 {
-		t.Fatalf("unexpected freshness metadata: %+v", response.Result.Freshness)
+	routes := []string{"bets", "positions", "leaderboard"}
+	for _, route := range routes {
+		req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/v0/market-groups/9/"+route+"?limit=21&offset=20", nil), map[string]string{"id": "9"})
+		req.Header.Set("Authorization", "Bearer regular-user")
+		rec := httptest.NewRecorder()
+		handler := NewHandler(service, nil, nil)
+		switch route {
+		case "bets":
+			handler.MarketGroupBets(rec, req)
+		case "positions":
+			handler.MarketGroupPositions(rec, req)
+		default:
+			handler.MarketGroupLeaderboard(rec, req)
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d body=%s", route, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "username") || strings.Contains(rec.Body.String(), "alice") || strings.Contains(rec.Body.String(), "profit") {
+			t.Fatalf("%s response named a trader: %s", route, rec.Body.String())
+		}
+		var response handlers.SuccessEnvelope[struct {
+			GroupID          int64 `json:"groupId"`
+			BetCount         int   `json:"betCount"`
+			YesVolume        int64 `json:"yesVolume"`
+			NoVolume         int64 `json:"noVolume"`
+			ParticipantCount int   `json:"participantCount"`
+		}]
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatalf("decode %s response: %v", route, err)
+		}
+		if !response.OK || response.Result.GroupID != 9 || response.Result.BetCount != 4 || response.Result.YesVolume != 30 || response.Result.NoVolume != 12 || response.Result.ParticipantCount != 2 {
+			t.Fatalf("unexpected %s activity: %+v", route, response.Result)
+		}
 	}
 }

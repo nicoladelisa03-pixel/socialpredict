@@ -40,21 +40,14 @@ func (s *Service) RefreshMarketAccountingSnapshot(ctx context.Context, marketID 
 // than synchronously refreshed so high-traffic display reads do not recompute
 // market accounting on every write.
 func (s *Service) GetMarketSummaryReadModel(ctx context.Context, marketID int64) (*MarketSummaryReadModel, error) {
-	if marketID <= 0 {
-		return nil, ErrInvalidInput
+	market, err := s.publicMarketByID(ctx, marketID)
+	if err != nil {
+		return nil, err
 	}
 
 	snapshotRepo, ok := s.repo.(MarketAccountingSnapshotRepository)
 	if !ok {
 		return nil, ErrInvalidState
-	}
-
-	market, err := s.repo.GetByID(ctx, marketID)
-	if err != nil {
-		return nil, err
-	}
-	if market == nil {
-		return nil, ErrMarketNotFound
 	}
 
 	snapshot, err := snapshotRepo.GetMarketAccountingSnapshot(ctx, marketID)

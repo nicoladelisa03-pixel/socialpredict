@@ -340,6 +340,41 @@ func TestGetMarketBets_ReturnsProbabilities(t *testing.T) {
 	}
 }
 
+func TestGetPublicTradingActivity_ReturnsTotalsWithoutNames(t *testing.T) {
+	createdAt := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	bets := []*markets.Bet{
+		{Username: "alice", Outcome: "YES", Amount: 10, PlacedAt: createdAt.Add(time.Minute)},
+		{Username: "bob", Outcome: "NO", Amount: 15, PlacedAt: createdAt.Add(3 * time.Minute)},
+	}
+	repo := newBetsRepo(
+		withBetsRepoMarket(&markets.Market{ID: 42, CreatedAt: createdAt}),
+		withBetsRepoBets(bets),
+		withBetsRepoPositions(markets.MarketPositions{
+			{Username: "alice", YesSharesOwned: 4},
+			{Username: "bob", NoSharesOwned: 2},
+			{Username: "carol", YesSharesOwned: 0, NoSharesOwned: 0},
+		}),
+	)
+	service := markets.NewService(repo, newNopUserService(), newBetsClock(createdAt), markets.Config{})
+
+	activity, err := service.GetPublicTradingActivity(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetPublicTradingActivity returned error: %v", err)
+	}
+	if activity.BetCount != 2 || activity.YesVolume != 10 || activity.NoVolume != 15 || activity.ParticipantCount != 2 {
+		t.Fatalf("unexpected public activity: %+v", activity)
+	}
+
+	hidden := markets.NewService(newBetsRepo(withBetsRepoMarket(&markets.Market{
+		ID:              8,
+		CreatedAt:       createdAt,
+		LifecycleStatus: markets.MarketLifecycleProposed,
+	})), newNopUserService(), newBetsClock(createdAt), markets.Config{})
+	if _, err := hidden.GetPublicTradingActivity(context.Background(), 8); !errors.Is(err, markets.ErrMarketNotFound) {
+		t.Fatalf("proposed market activity error = %v, want ErrMarketNotFound", err)
+	}
+}
+
 func TestGetMarketBets_EmptyWhenNoBets(t *testing.T) {
 	createdAt := marketsTestTime()
 	repo := newBetsRepo(

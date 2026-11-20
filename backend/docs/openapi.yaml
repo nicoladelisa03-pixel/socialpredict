@@ -97,8 +97,8 @@ x-route-family-migration-matrix:
     - family: operator-status
       paths:
         - /ops/status
-      success_contract: JSON runtime status `{live,ready,requestFailuresTotal,dbPool}`
-      failure_contract: same JSON status with HTTP 503 while not ready
+      success_contract: JSON runtime status `{live,ready,requestFailuresTotal,dbPool}` for an authenticated admin
+      failure_contract: ReasonResponse 401 or 403 without metrics; same JSON status with HTTP 503 while an admin finds the process not ready
       migration_state: intentional_operator_transport
       source: backend/server/server.go and internal/app/runtime
     - family: infra-docs
@@ -249,6 +249,16 @@ x-route-family-migration-matrix:
         - /v0/admin/market-group-answer-additions/{id}
         - /v0/admin/market-tags
         - /v0/admin/market-tags/{slug}
+        - /v0/startups
+        - /v0/startups/{slug}
+        - /v0/startups/{slug}/markets
+        - /v0/admin/startups
+        - /v0/admin/startups/{slug}
+        - /v0/startups/{slug}/funding
+        - /v0/admin/startups/{slug}/funding
+        - /v0/admin/startups/{slug}/funding/{entryId}
+        - /v0/admin/startup-markets
+        - /v0/admin/markets/{id}/startup
         - /v0/content/home
         - /v0/admin/content/home
         - /v0/content/market-discovery/{slug}
@@ -264,7 +274,7 @@ x-route-family-migration-matrix:
       success_contract: mixed raw JSON DTO and JSON `{ok:true,result}`
       failure_contract: ReasonResponse plus middleware 429 where wrapped
       migration_state: mixed_raw_success_reason_failure
-      source: backend/server/server.go, handlers/admin, handlers/cms
+      source: backend/server/server.go, handlers/admin, handlers/cms, handlers/startups
 
 paths:
   /health:
@@ -323,13 +333,17 @@ paths:
       operationId: getOperationalStatus
       summary: Get backend operational status
       description: >
-        Minimal operator-facing runtime status export for the first alert set:
-        backend down or unready, fatal startup failure before readiness opens,
-        severe server-side request-failure spikes, and database connection pool
-        saturation or wait-latency signals affected by pool tuning. The
+        Minimal operator-facing runtime status export for an authenticated
+        administrator: backend down or unready, severe server-side
+        request-failure spikes, and database connection pool saturation or
+        wait-latency signals. Anonymous callers receive 401 and other signed-in
+        accounts receive 403, without pool or failure counters. The
         request-failure count and pool snapshot are process-local and reset when
         the process restarts. This route is outside the `/v0` business namespace
-        and does not expose economy/accounting metrics.
+        and does not expose economy/accounting metrics. `/health` and `/readyz`
+        remain the anonymous liveness and readiness probes.
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Backend is live, ready, and serving operator status.
@@ -343,8 +357,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationalStatus'
+        '401':
+          description: Login required or token invalid. No operational metrics are returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not an administrator, or a password change is required. No operational metrics are returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
         '503':
-          description: Backend is not live or is not ready to serve traffic.
+          description: An administrator found the backend not live or not ready to serve traffic.
           headers:
             Cache-Control:
               description: Operator status is runtime state and must not be cached.
@@ -751,8 +777,8 @@ paths:
     get:
       tags: [Markets]
       operationId: listMarketGroupBets
-      summary: List grouped market bets
-      description: Returns a single globally sorted bet feed across all child markets in a multiple-choice binary group.
+      summary: Public totals for a market group
+      description: Returns trade count, YES/NO volume, and participant count for a visible market group. It does not name traders or return individual bets, holdings, or profit.
       parameters:
         - in: path
           name: id
@@ -775,11 +801,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Grouped bets returned successfully.
+          description: Public group totals returned successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketGroupBetsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid group ID.
           content:
@@ -809,8 +835,8 @@ paths:
     get:
       tags: [Markets]
       operationId: listMarketGroupPositions
-      summary: List grouped market positions
-      description: Returns user positions aggregated across child markets with per-answer breakdowns.
+      summary: Public totals for a market group
+      description: Returns the same public trade count, YES/NO volume, and participant count as the group bet route. It does not name holders.
       parameters:
         - in: path
           name: id
@@ -833,11 +859,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Grouped positions returned successfully.
+          description: Public group totals returned successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketGroupPositionsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid group ID.
           content:
@@ -867,8 +893,8 @@ paths:
     get:
       tags: [Markets]
       operationId: getMarketGroupLeaderboard
-      summary: Get grouped market leaderboard
-      description: Returns an aggregate leaderboard across child markets with per-answer profit breakdowns.
+      summary: Public totals for a market group
+      description: Returns the same public totals as the group bet route. It does not rank traders or return profit.
       parameters:
         - in: path
           name: id
@@ -891,11 +917,11 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Grouped leaderboard returned successfully.
+          description: Public group totals returned successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketGroupLeaderboardEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid group ID.
           content:
@@ -2046,8 +2072,8 @@ paths:
     get:
       tags: [Markets]
       operationId: getMarketLeaderboard
-      summary: Get market leaderboard
-      description: Ranks participants in a single market by profit and traded volume.
+      summary: Public totals for a market
+      description: Returns trade count, YES/NO volume, and participant count. It does not rank traders or return profit, spend, or share counts.
       parameters:
         - in: path
           name: id
@@ -2077,7 +2103,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketLeaderboardEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid market ID.
           content:
@@ -2295,8 +2321,8 @@ paths:
     get:
       tags: [Bets, Markets]
       operationId: listMarketBets
-      summary: List bets for a market
-      description: Returns the bet history for a specific market.
+      summary: Public totals for a market
+      description: Returns trade count, YES/NO volume, and participant count for a visible market. It does not name traders or return individual bets.
       parameters:
         - in: path
           name: marketId
@@ -2312,7 +2338,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketBetsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid market ID.
           content:
@@ -2342,8 +2368,8 @@ paths:
     get:
       tags: [Markets]
       operationId: listMarketPositions
-      summary: List user positions for a market
-      description: Returns all user positions (YES/NO shares) in a specific market.
+      summary: Public totals for a market
+      description: Returns the same public trade count, YES/NO volume, and participant count as the bet route. It does not name holders or return individual share counts.
       parameters:
         - in: path
           name: marketId
@@ -2359,7 +2385,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketPositionsEnvelopeResponse'
+                $ref: '#/components/schemas/PublicTradingActivityEnvelopeResponse'
         '400':
           description: Invalid market ID.
           content:
@@ -2383,8 +2409,12 @@ paths:
     get:
       tags: [Markets]
       operationId: getMarketUserPosition
-      summary: Get a user's position in a market
-      description: Returns the holdings for a specific user in the given market.
+      summary: Get the caller's position in a market
+      description: >
+        Returns the caller's holdings in the given market. Anonymous callers and
+        other accounts receive an authorization failure and no position data.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: marketId
@@ -2409,6 +2439,18 @@ paths:
                 $ref: '#/components/schemas/UserPositionEnvelopeResponse'
         '400':
           description: Invalid market ID or username.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -3119,8 +3161,13 @@ paths:
     get:
       tags: [Users]
       operationId: getUserCredit
-      summary: Get user credit
-      description: Returns the user's available credit limit, treating missing users as max debt.
+      summary: Get the caller's available credit
+      description: >
+        Returns the authenticated account's available credit. Anonymous callers
+        and other accounts are denied. A missing record for the caller is still
+        treated as the configured maximum debt.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: username
@@ -3137,6 +3184,18 @@ paths:
                 $ref: '#/components/schemas/UserCreditResponse'
         '400':
           description: Username missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -4551,6 +4610,485 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReasonResponse'
 
+  /v0/startups:
+    get:
+      tags: [Startups]
+      operationId: listStartups
+      summary: List startups
+      description: >
+        Provisional public read of admin-managed startup profiles. Funding,
+        valuation, and market links are not part of this response.
+      responses:
+        '200':
+          description: Startups returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupListEnvelopeResponse'
+        '500':
+          description: Unexpected startup listing failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/startups/{slug}:
+    get:
+      tags: [Startups]
+      operationId: getStartup
+      summary: Get a startup by slug
+      description: Provisional public read of one startup profile.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Startup returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupEnvelopeResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/startups/{slug}/markets:
+    get:
+      tags: [Startups]
+      operationId: listStartupMarkets
+      summary: List a startup's public markets
+      description: >
+        Provisional public read of YES/NO markets linked to a startup.
+        Unpublished markets are omitted. Trading fields are not changed by this read.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Public linked markets returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupMarketsEnvelopeResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startup-markets:
+    get:
+      tags: [Startups]
+      operationId: listAdminStartupMarkets
+      summary: List markets and their startup links
+      description: >
+        Admin-only list of existing markets, including proposed markets, and the
+        slug of the startup each one is linked to. An empty slug means the
+        market is not linked. This does not make those markets public.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Market associations returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStartupMarketsEnvelopeResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected market association failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/markets/{id}/startup:
+    patch:
+      tags: [Startups]
+      operationId: setAdminMarketStartup
+      summary: Attach or clear a market's startup
+      description: >
+        Admin-only endpoint that sets, changes, or clears the startup linked to
+        an existing market. An empty startupSlug clears the link. Trading,
+        prices, and resolution are not changed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMarketStartupRequest'
+      responses:
+        '200':
+          description: Market startup association saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketStartupEnvelopeResponse'
+        '400':
+          description: Invalid market id or startup slug.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Market or startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups:
+    post:
+      tags: [Startups]
+      operationId: createAdminStartup
+      summary: Create a startup
+      description: Admin-only endpoint for creating a startup profile. The slug is unique and stays fixed after creation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStartupRequest'
+      responses:
+        '201':
+          description: Startup created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupEnvelopeResponse'
+        '400':
+          description: Invalid startup fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '409':
+          description: A startup with this slug already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected startup creation failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups/{slug}:
+    patch:
+      tags: [Startups]
+      operationId: updateAdminStartup
+      summary: Update a startup
+      description: >
+        Admin-only endpoint for updating a startup's name, description, and
+        website. A different slug is rejected. There is no delete endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStartupUpdateRequest'
+      responses:
+        '200':
+          description: Startup updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupEnvelopeResponse'
+        '400':
+          description: Invalid startup fields or a requested slug change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected startup update failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/startups/{slug}/funding:
+    get:
+      tags: [Startups]
+      operationId: listStartupFunding
+      summary: List a startup's sourced funding history
+      description: >
+        Public read of funding rounds entered by an admin. Amounts are integer
+        minor units, such as cents, and null means the figure was not disclosed.
+        A reported valuation is not a prediction-market price or probability.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Funding history returned. The rounds list is empty when none have been added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupFundingEnvelopeResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups/{slug}/funding:
+    post:
+      tags: [Startups]
+      operationId: createAdminStartupFunding
+      summary: Add a sourced funding round
+      description: >
+        Admin-only endpoint that records one funding announcement for a startup.
+        Unknown amounts are omitted or null, never zero. There is no delete endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFundingRoundRequest'
+      responses:
+        '201':
+          description: Funding round created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundingRoundEnvelopeResponse'
+        '400':
+          description: Invalid date, amount, currency, basis, or source link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Startup not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected funding creation failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
+  /v0/admin/startups/{slug}/funding/{entryId}:
+    patch:
+      tags: [Startups]
+      operationId: updateAdminStartupFunding
+      summary: Correct a sourced funding round
+      description: >
+        Admin-only replacement of one funding round that belongs to this startup.
+        Sending null clears an optional amount. A round owned by another startup
+        is not found.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        - in: path
+          name: entryId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFundingRoundRequest'
+      responses:
+        '200':
+          description: Funding round updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FundingRoundEnvelopeResponse'
+        '400':
+          description: Invalid funding fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Authentication failed or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: Admin privileges required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '404':
+          description: Startup or funding round not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '429':
+          description: Rate limit exceeded by shared security middleware.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '500':
+          description: Unexpected funding update failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+
   /v0/admin/market-tags:
     get:
       tags: [Markets]
@@ -4713,8 +5251,12 @@ paths:
     get:
       tags: [Users]
       operationId: getUserPortfolio
-      summary: Get user portfolio
-      description: Returns the markets and share counts for a user's portfolio.
+      summary: Get the caller's portfolio
+      description: >
+        Returns the markets and share counts for the authenticated account.
+        Anonymous callers and other accounts are denied.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: username
@@ -4731,6 +5273,18 @@ paths:
                 $ref: '#/components/schemas/PortfolioResponse'
         '400':
           description: Username missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -4752,8 +5306,12 @@ paths:
     get:
       tags: [Users]
       operationId: getUserFinancialSnapshot
-      summary: Get user financial snapshot
-      description: Returns a map of financial metrics (e.g., balances and exposures) by key.
+      summary: Get the caller's financial snapshot
+      description: >
+        Returns the authenticated account's balances, exposures, and profit
+        figures. Anonymous callers and other accounts are denied.
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: username
@@ -4770,6 +5328,18 @@ paths:
                 $ref: '#/components/schemas/UserFinancialResponse'
         '400':
           description: Username missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '401':
+          description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -4975,12 +5545,11 @@ paths:
     get:
       tags: [Users]
       operationId: getUserFinancialReadModelSummary
-      summary: Get authenticated user financial read-model summary
+      summary: Get the caller's financial read-model summary
       description: >
-        Returns a cached/read-model financial summary for game transparency.
-        Any logged-in user may view another user's game-financial summary, but
-        logged-out visitors cannot access this endpoint. The response includes
-        freshness metadata and must not be used for transaction decisions.
+        Returns the authenticated account's cached financial summary, including
+        freshness metadata. Another account cannot read it. The response must
+        not be used for transaction decisions.
       security:
         - bearerAuth: []
       parameters:
@@ -5005,6 +5574,12 @@ paths:
                 $ref: '#/components/schemas/ReasonResponse'
         '401':
           description: Login required or token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '403':
+          description: The caller is not the requested account, or a password change is required.
           content:
             application/json:
               schema:
@@ -5088,8 +5663,8 @@ paths:
     get:
       tags: [Metrics]
       operationId: getGlobalLeaderboard
-      summary: Get global leaderboard
-      description: Returns a leaderboard ranking users by profitability across all markets.
+      summary: Public participant count
+      description: Returns how many accounts have ranked activity. It does not name those accounts or return profit, value, or spend. A private visibility setting can still require login before this count is returned.
       responses:
         '200':
           description: Global leaderboard returned successfully.
@@ -5747,9 +6322,48 @@ components:
           type: boolean
           enum: [true]
         result:
-          type: array
-          items:
-            $ref: '#/components/schemas/GlobalLeaderboardEntry'
+          $ref: '#/components/schemas/PublicLeaderboardSummary'
+      required: [ok, result]
+
+    PublicLeaderboardSummary:
+      type: object
+      required: [participantCount]
+      properties:
+        participantCount:
+          type: integer
+          minimum: 0
+        freshness:
+          $ref: '#/components/schemas/ReadModelFreshness'
+
+    PublicTradingActivity:
+      type: object
+      required: [betCount, yesVolume, noVolume, participantCount]
+      properties:
+        groupId:
+          type: integer
+          format: int64
+          description: Present when the totals belong to a market group.
+        betCount:
+          type: integer
+          minimum: 0
+        yesVolume:
+          type: integer
+          format: int64
+        noVolume:
+          type: integer
+          format: int64
+        participantCount:
+          type: integer
+          minimum: 0
+
+    PublicTradingActivityEnvelopeResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/PublicTradingActivity'
       required: [ok, result]
 
     MarketLeaderboardEnvelopeResponse:
@@ -6286,6 +6900,288 @@ components:
           enum: [true]
         result:
           $ref: '#/components/schemas/MarketTagResponse'
+
+    AdminStartupRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 64
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        description:
+          type: string
+          maxLength: 2000
+        websiteUrl:
+          type: string
+          maxLength: 500
+          format: uri
+
+    AdminStartupUpdateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          description: Must be omitted or equal to the current slug. A different slug is rejected.
+          maxLength: 64
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        description:
+          type: string
+          maxLength: 2000
+        websiteUrl:
+          type: string
+          maxLength: 500
+          format: uri
+
+    StartupResponse:
+      type: object
+      required: [id, name, slug, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        websiteUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    StartupListResponse:
+      type: object
+      required: [startups, total]
+      properties:
+        startups:
+          type: array
+          items:
+            $ref: '#/components/schemas/StartupResponse'
+        total:
+          type: integer
+
+    StartupListEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupListResponse'
+
+    StartupEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupResponse'
+
+    AdminFundingRoundRequest:
+      type: object
+      required: [roundLabel, announcementDate, currency, evidenceUrl, sourceLabel]
+      properties:
+        roundLabel:
+          type: string
+          maxLength: 80
+        announcementDate:
+          type: string
+          format: date
+        amountRaisedMinor:
+          type: integer
+          format: int64
+          nullable: true
+          description: Amount raised in minor units. Null means not disclosed. Zero is rejected.
+        valuationMinor:
+          type: integer
+          format: int64
+          nullable: true
+          description: Reported valuation in minor units. Null means not disclosed. Zero is rejected.
+        valuationBasis:
+          type: string
+          enum: [pre-money, post-money, unspecified]
+        currency:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+        evidenceUrl:
+          type: string
+          format: uri
+        sourceLabel:
+          type: string
+          maxLength: 120
+        note:
+          type: string
+          maxLength: 500
+
+    FundingRoundResponse:
+      type: object
+      required: [id, roundLabel, announcementDate, valuationBasis, currency, evidenceUrl, sourceLabel]
+      properties:
+        id:
+          type: integer
+          format: int64
+        roundLabel:
+          type: string
+        announcementDate:
+          type: string
+          format: date
+        amountRaisedMinor:
+          type: integer
+          format: int64
+          nullable: true
+        valuationMinor:
+          type: integer
+          format: int64
+          nullable: true
+        valuationBasis:
+          type: string
+          enum: [pre-money, post-money, unspecified]
+        currency:
+          type: string
+        evidenceUrl:
+          type: string
+          format: uri
+        sourceLabel:
+          type: string
+        note:
+          type: string
+
+    FundingRoundEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/FundingRoundResponse'
+
+    StartupFundingHistoryResponse:
+      type: object
+      required: [rounds, latestReportedValuation]
+      properties:
+        rounds:
+          type: array
+          items:
+            $ref: '#/components/schemas/FundingRoundResponse'
+        latestReportedValuation:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/FundingRoundResponse'
+          description: >
+            The newest round that disclosed a valuation. Null when none did.
+            This is a reported fundraising figure, not a market probability.
+
+    StartupFundingEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupFundingHistoryResponse'
+
+    AdminMarketStartupRequest:
+      type: object
+      required: [startupSlug]
+      properties:
+        startupSlug:
+          type: string
+          description: Slug of the startup to attach. An empty string clears the association.
+
+    MarketStartupLinkResponse:
+      type: object
+      required: [marketId, startupSlug]
+      properties:
+        marketId:
+          type: integer
+          format: int64
+        startupSlug:
+          type: string
+
+    AdminStartupMarketAssociation:
+      type: object
+      required: [marketId, questionTitle, lifecycleStatus, startupSlug]
+      properties:
+        marketId:
+          type: integer
+          format: int64
+        questionTitle:
+          type: string
+        lifecycleStatus:
+          type: string
+        startupSlug:
+          type: string
+          description: Empty when the market is not linked to a startup.
+
+    AdminStartupMarketsResponse:
+      type: object
+      required: [markets, total]
+      properties:
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminStartupMarketAssociation'
+        total:
+          type: integer
+
+    AdminStartupMarketsEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/AdminStartupMarketsResponse'
+
+    MarketStartupEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/MarketStartupLinkResponse'
+
+    StartupMarketsResponse:
+      type: object
+      required: [markets, total]
+      properties:
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicMarketResponse'
+        total:
+          type: integer
+
+    StartupMarketsEnvelopeResponse:
+      type: object
+      required: [ok, result]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/StartupMarketsResponse'
 
     MarketResponse:
       type: object

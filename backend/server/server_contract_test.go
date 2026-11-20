@@ -221,6 +221,7 @@ func TestServerServesPublicReportingAndContentRoutesWithoutAuth(t *testing.T) {
 		"/v0/global/leaderboard",
 		"/v0/content/home",
 		"/v0/content/social-share",
+		"/v0/startups",
 	}
 
 	for _, path := range tests {
@@ -244,6 +245,29 @@ func TestServerServesPublicReportingAndContentRoutesWithoutAuth(t *testing.T) {
 				t.Fatalf("expected shared success envelope, got %+v", response)
 			}
 		})
+	}
+}
+
+func TestServerStartupWritesRequireAdmin(t *testing.T) {
+	t.Setenv("JWT_SIGNING_KEY", "test-secret-key")
+
+	db := modelstesting.NewFakeDB(t)
+	handler := buildTestHandler(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/v0/admin/startups", strings.NewReader(`{"name":"Northwind","slug":"northwind"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope handlers.FailureEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode failure: %v", err)
+	}
+	if envelope.OK || envelope.Reason != string(handlers.ReasonInvalidToken) {
+		t.Fatalf("unexpected failure: %+v", envelope)
 	}
 }
 

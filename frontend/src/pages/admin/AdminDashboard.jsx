@@ -1,5 +1,6 @@
 import React from 'react';
 import ModeratorMarketReview from '../../components/layouts/admin/ModeratorMarketReview';
+import AdminStartups from '../../components/layouts/admin/AdminStartups';
 import UserQueue from '../../components/layouts/admin/UserQueue';
 import CmsDashboard from './CmsDashboard';
 import SiteTabs from '../../components/tabs/SiteTabs';
@@ -13,6 +14,10 @@ function AdminDashboard({
         {
             label: 'Review Markets',
             content: <ModeratorMarketReview defaultTab={defaultReviewTab} />
+        },
+        {
+            label: 'Startups',
+            content: <AdminStartups />
         },
         {
             label: 'User Governance',

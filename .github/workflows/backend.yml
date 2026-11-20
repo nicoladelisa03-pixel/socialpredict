@@ -107,6 +107,7 @@ jobs:
       || startsWith(github.head_ref, 'chore/')
       || startsWith(github.head_ref, 'test/')
       || startsWith(github.head_ref, 'hotfix/')
+      || startsWith(github.head_ref, 'cursor/')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -150,6 +151,7 @@ jobs:
       || startsWith(github.head_ref, 'chore/')
       || startsWith(github.head_ref, 'test/')
       || startsWith(github.head_ref, 'hotfix/')
+      || startsWith(github.head_ref, 'cursor/')
     runs-on: ubuntu-latest
     steps:
       - name: Publish aggregate unit status

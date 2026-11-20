@@ -7,11 +7,13 @@ import (
 	"github.com/gorilla/mux"
 
 	"socialpredict/handlers"
+	"socialpredict/handlers/authhttp"
 	dusers "socialpredict/internal/domain/users"
+	authsvc "socialpredict/internal/service/auth"
 )
 
-// GetUserFinancialHandler returns an HTTP handler that responds with comprehensive user financials.
-func GetUserFinancialHandler(svc dusers.ServiceInterface) http.HandlerFunc {
+// GetUserFinancialHandler returns an HTTP handler for the caller's own financial snapshot.
+func GetUserFinancialHandler(svc dusers.ServiceInterface, auth authsvc.Authenticator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			_ = handlers.WriteFailure(w, http.StatusMethodNotAllowed, handlers.ReasonMethodNotAllowed)
@@ -21,6 +23,9 @@ func GetUserFinancialHandler(svc dusers.ServiceInterface) http.HandlerFunc {
 		username := mux.Vars(r)["username"]
 		if username == "" {
 			_ = handlers.WriteFailure(w, http.StatusBadRequest, handlers.ReasonInvalidRequest)
+			return
+		}
+		if !authhttp.RequireOwnAccount(w, r, auth, username) {
 			return
 		}
 

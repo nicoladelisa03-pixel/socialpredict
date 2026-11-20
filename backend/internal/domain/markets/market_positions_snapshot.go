@@ -82,8 +82,8 @@ func (s *Service) RefreshMarketPositionsSnapshot(ctx context.Context, marketID i
 // GetMarketPositionsReadModel returns a page from the stored display-only
 // market positions snapshot. A missing snapshot is not an error.
 func (s *Service) GetMarketPositionsReadModel(ctx context.Context, marketID int64, p Page) (*MarketPositionsSnapshot, error) {
-	if marketID <= 0 {
-		return nil, ErrInvalidInput
+	if _, err := s.publicMarketByID(ctx, marketID); err != nil {
+		return nil, err
 	}
 	snapshotRepo, ok := s.repo.(MarketPositionsSnapshotRepository)
 	if !ok {

@@ -32,6 +32,15 @@ type marketGroupActivityService interface {
 	GetMarketGroupLeaderboardPage(ctx context.Context, groupID int64, p dmarkets.Page) (*dmarkets.MarketGroupLeaderboardPage, error)
 }
 
+type publicGroupActivityService interface {
+	GetPublicMarketGroupActivity(ctx context.Context, groupID int64) (dmarkets.PublicTradingActivity, error)
+}
+
+type publicGroupActivityResponse struct {
+	GroupID int64 `json:"groupId"`
+	dmarkets.PublicTradingActivity
+}
+
 type marketGroupAnswerAdditionService interface {
 	ProposeMarketGroupAnswerAddition(ctx context.Context, groupID int64, actorUsername string, req dmarkets.MarketGroupAnswerAdditionRequest) (*dmarkets.MarketGroupAnswerAddition, error)
 	ListMarketGroupAnswerAdditionsForReviewer(ctx context.Context, reviewerUsername string, filters dmarkets.MarketGroupAnswerAdditionFilters) ([]dmarkets.MarketGroupAnswerAddition, error)
@@ -377,65 +386,25 @@ func (h *Handler) UpdateMarketGroupAnswerAdditionSettings(w http.ResponseWriter,
 
 // MarketGroupBets handles GET /v0/market-groups/{id}/bets.
 func (h *Handler) MarketGroupBets(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w)
-		return
-	}
-	svc, ok := h.service.(marketGroupActivityService)
-	if !ok {
-		writeInternalError(w)
-		return
-	}
-	groupID, err := parseMarketGroupIDFromRequest(r)
-	if err != nil {
-		writeInvalidRequest(w)
-		return
-	}
-	page := parsePagination(r, 20)
-	result, err := svc.GetMarketGroupBetsPage(r.Context(), groupID, page)
-	if err != nil {
-		writeMarketGroupDetailsError(w, err)
-		return
-	}
-	if err := handlers.WriteResult(w, http.StatusOK, marketGroupBetsPageToResponse(result)); err != nil {
-		logger.LogError("MarketGroupBets", "WriteResponse", err)
-	}
+	h.writePublicGroupActivity(w, r, "MarketGroupBets")
 }
 
 // MarketGroupPositions handles GET /v0/market-groups/{id}/positions.
 func (h *Handler) MarketGroupPositions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w)
-		return
-	}
-	svc, ok := h.service.(marketGroupActivityService)
-	if !ok {
-		writeInternalError(w)
-		return
-	}
-	groupID, err := parseMarketGroupIDFromRequest(r)
-	if err != nil {
-		writeInvalidRequest(w)
-		return
-	}
-	page := parsePagination(r, 20)
-	result, err := svc.GetMarketGroupPositionsPage(r.Context(), groupID, page)
-	if err != nil {
-		writeMarketGroupDetailsError(w, err)
-		return
-	}
-	if err := handlers.WriteResult(w, http.StatusOK, marketGroupPositionsPageToResponse(result)); err != nil {
-		logger.LogError("MarketGroupPositions", "WriteResponse", err)
-	}
+	h.writePublicGroupActivity(w, r, "MarketGroupPositions")
 }
 
 // MarketGroupLeaderboard handles GET /v0/market-groups/{id}/leaderboard.
 func (h *Handler) MarketGroupLeaderboard(w http.ResponseWriter, r *http.Request) {
+	h.writePublicGroupActivity(w, r, "MarketGroupLeaderboard")
+}
+
+func (h *Handler) writePublicGroupActivity(w http.ResponseWriter, r *http.Request, operation string) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w)
 		return
 	}
-	svc, ok := h.service.(marketGroupActivityService)
+	svc, ok := h.service.(publicGroupActivityService)
 	if !ok {
 		writeInternalError(w)
 		return
@@ -445,14 +414,16 @@ func (h *Handler) MarketGroupLeaderboard(w http.ResponseWriter, r *http.Request)
 		writeInvalidRequest(w)
 		return
 	}
-	page := parsePagination(r, 20)
-	result, err := svc.GetMarketGroupLeaderboardPage(r.Context(), groupID, page)
+	activity, err := svc.GetPublicMarketGroupActivity(r.Context(), groupID)
 	if err != nil {
 		writeMarketGroupDetailsError(w, err)
 		return
 	}
-	if err := handlers.WriteResult(w, http.StatusOK, marketGroupLeaderboardPageToResponse(result)); err != nil {
-		logger.LogError("MarketGroupLeaderboard", "WriteResponse", err)
+	if err := handlers.WriteResult(w, http.StatusOK, publicGroupActivityResponse{
+		GroupID:               groupID,
+		PublicTradingActivity: activity,
+	}); err != nil {
+		logger.LogError(operation, "WriteResponse", err)
 	}
 }
 

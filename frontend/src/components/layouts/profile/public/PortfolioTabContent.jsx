@@ -30,7 +30,8 @@ const PortfolioTabContent = ({ username }) => {
     const [page, setPage] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const { isLoggedIn, token } = useAuth();
+    const { isLoggedIn, token, username: signedInUsername } = useAuth();
+    const ownsAccount = Boolean(token) && signedInUsername === username;
 
     useEffect(() => {
         setPage(0);
@@ -61,14 +62,14 @@ const PortfolioTabContent = ({ username }) => {
             }
         };
 
-        if (username && token) {
+        if (ownsAccount) {
             fetchPositions();
         } else {
             setPositions([]);
             setError(null);
             setLoading(false);
         }
-    }, [username, token]);
+    }, [ownsAccount, username, token]);
 
     if (loading) {
         return (
@@ -91,15 +92,17 @@ const PortfolioTabContent = ({ username }) => {
         );
     }
 
-    if (!isLoggedIn) {
+    if (!ownsAccount) {
         return (
             <div className="bg-primary-background shadow-md rounded-lg p-6">
                 <div className="text-center">
                     <div className="text-xl font-semibold text-blue-100">
-                        Log in to see portfolio
+                        {isLoggedIn ? 'Portfolio is private.' : 'Log in to see your portfolio'}
                     </div>
                     <div className="text-sm text-gray-400 mt-2">
-                        User portfolio positions are visible to logged-in players.
+                        {isLoggedIn
+                            ? 'Only this account can see its positions.'
+                            : 'Sign in to see your own positions.'}
                     </div>
                 </div>
             </div>

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,7 +65,9 @@ func (m marketServiceStub) GetMarketBetsPage(ctx context.Context, marketID int64
 	return m.getMarketBetsPageFunc(ctx, marketID, p)
 }
 func (m marketServiceStub) GetMarketPositions(context.Context, int64) (dmarkets.MarketPositions, error) {
-	panic("not implemented")
+	return dmarkets.MarketPositions{
+		{Username: "alice", YesSharesOwned: 4},
+	}, nil
 }
 func (m marketServiceStub) GetMarketPositionsPage(context.Context, int64, dmarkets.Page) (dmarkets.MarketPositions, error) {
 	panic("not implemented")
@@ -191,19 +194,19 @@ func TestMarketBetsHandlerWithService(t *testing.T) {
 			}
 
 			if tt.verifyBody {
-				var envelope handlers.SuccessEnvelope[[]dmarkets.BetDisplayInfo]
+				if strings.Contains(rr.Body.String(), "alice") || strings.Contains(rr.Body.String(), "username") {
+					t.Fatalf("public bet activity named a trader: %s", rr.Body.String())
+				}
+				var envelope handlers.SuccessEnvelope[dmarkets.PublicTradingActivity]
 				if err := json.Unmarshal(rr.Body.Bytes(), &envelope); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
 				if !envelope.OK {
 					t.Fatalf("expected ok envelope, got %+v", envelope)
 				}
-				if len(envelope.Result) != 1 {
-					t.Fatalf("expected 1 bet, got %d", len(envelope.Result))
-				}
-				got := envelope.Result[0]
-				if got.Username != "alice" || got.Outcome != "YES" || got.Amount != 100 || got.Probability != 0.55 || !got.PlacedAt.Equal(now) {
-					t.Fatalf("unexpected bet payload: %+v", got)
+				got := envelope.Result
+				if got.BetCount != 1 || got.YesVolume != 100 || got.NoVolume != 0 || got.ParticipantCount != 1 {
+					t.Fatalf("unexpected public activity: %+v", got)
 				}
 			} else if tt.wantReason != "" {
 				var envelope handlers.FailureEnvelope
@@ -218,26 +221,40 @@ func TestMarketBetsHandlerWithService(t *testing.T) {
 	}
 }
 
-func TestMarketBetsHandlerWithService_UsesPaginationQuery(t *testing.T) {
+func TestMarketBetsHandlerWithService_IgnoresNamedPage(t *testing.T) {
 	handler := MarketBetsHandlerWithService(marketServiceStub{
-		getMarketBetsPageFunc: func(ctx context.Context, marketID int64, p dmarkets.Page) ([]*dmarkets.BetDisplayInfo, error) {
-			if marketID != 7 {
-				t.Fatalf("expected marketID 7, got %d", marketID)
-			}
-			if p.Limit != 20 || p.Offset != 40 {
-				t.Fatalf("expected page limit=20 offset=40, got %+v", p)
-			}
-			return []*dmarkets.BetDisplayInfo{}, nil
+		getMarketBetsFunc: func(ctx context.Context, marketID int64) ([]*dmarkets.BetDisplayInfo, error) {
+			return []*dmarkets.BetDisplayInfo{
+				{Username: "alice", Outcome: "YES", Amount: 10},
+				{Username: "bob", Outcome: "NO", Amount: 4},
+			}, nil
+		},
+		getMarketBetsPageFunc: func(context.Context, int64, dmarkets.Page) ([]*dmarkets.BetDisplayInfo, error) {
+			t.Fatal("public bet activity must not return a named page")
+			return nil, nil
 		},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/v0/markets/bets/7?limit=20&offset=40", nil)
-	req = mux.SetURLVars(req, map[string]string{"marketId": "7"})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	for _, header := range []string{"", "Bearer regular-user"} {
+		req := httptest.NewRequest(http.MethodGet, "/v0/markets/bets/7?limit=1&offset=0", nil)
+		req = mux.SetURLVars(req, map[string]string{"marketId": "7"})
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "alice") || strings.Contains(rec.Body.String(), "bob") || strings.Contains(rec.Body.String(), "username") {
+			t.Fatalf("public bet activity named a trader: %s", rec.Body.String())
+		}
+		var envelope handlers.SuccessEnvelope[dmarkets.PublicTradingActivity]
+		if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if envelope.Result.BetCount != 2 || envelope.Result.YesVolume != 10 || envelope.Result.NoVolume != 4 || envelope.Result.ParticipantCount != 1 {
+			t.Fatalf("unexpected public activity: %+v", envelope.Result)
+		}
 	}
 }

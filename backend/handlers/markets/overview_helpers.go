@@ -374,7 +374,7 @@ func marketGroupLinkForMarket(ctx context.Context, provider any, marketID int64)
 		return nil
 	}
 	group, err := lookup.GetMarketGroupForMarket(ctx, marketID)
-	if err != nil || group == nil || group.ID <= 0 {
+	if err != nil || group == nil || group.ID <= 0 || !dmarkets.PublicLifecycleVisible(group.LifecycleStatus) {
 		return nil
 	}
 	status := group.LifecycleStatus

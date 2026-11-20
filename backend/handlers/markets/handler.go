@@ -44,9 +44,8 @@ type readModelInvalidator interface {
 	InvalidateAfterMarketTransaction(ctx context.Context, username string, marketID int64, reason string) error
 }
 
-type marketLeaderboardReadModelService interface {
-	GetMarketLeaderboardReadModel(ctx context.Context, marketID int64, p dmarkets.Page) (*dmarkets.MarketLeaderboardSnapshot, error)
-	RefreshMarketLeaderboardSnapshot(ctx context.Context, marketID int64) (*dmarkets.MarketLeaderboardSnapshot, error)
+type publicTradingActivityService interface {
+	GetPublicTradingActivity(ctx context.Context, marketID int64) (dmarkets.PublicTradingActivity, error)
 }
 
 // NewHandler creates a new markets handler
@@ -417,7 +416,8 @@ func (h *Handler) GetDetails(w http.ResponseWriter, r *http.Request) {
 	_ = writeJSON(w, http.StatusOK, response)
 }
 
-// MarketLeaderboard handles GET /markets/{id}/leaderboard
+// MarketLeaderboard handles GET /markets/{id}/leaderboard.
+// The public response is market totals. It does not rank or name traders.
 func (h *Handler) MarketLeaderboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w)
@@ -430,60 +430,18 @@ func (h *Handler) MarketLeaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page := parsePagination(r, 100)
-
-	var leaderboard []*dmarkets.LeaderboardRow
-	var freshness *dto.Freshness
-	if snapshot, snapshotErr := h.marketLeaderboardReadModel(r.Context(), id, page); snapshotErr == nil && snapshot != nil {
-		leaderboard = snapshot.Rows
-		freshnessResponse := readModelFreshnessToResponse(snapshot.Freshness())
-		freshness = &freshnessResponse
-	} else {
-		if snapshotErr != nil {
-			logger.LogError("MarketLeaderboard", "GetMarketLeaderboardReadModel", snapshotErr)
-		}
-		var err error
-		leaderboard, err = h.service.GetMarketLeaderboard(r.Context(), id, page)
-		if err != nil {
-			writeLeaderboardError(w, err)
-			return
-		}
-	}
-
-	leaderRows := buildLeaderboardRows(leaderboard)
-
-	response := dto.LeaderboardResponse{
-		MarketID:    id,
-		Leaderboard: leaderRows,
-		Total:       len(leaderRows),
-		Freshness:   freshness,
-	}
-
-	_ = handlers.WriteResult(w, http.StatusOK, response)
-}
-
-func (h *Handler) marketLeaderboardReadModel(ctx context.Context, marketID int64, page dmarkets.Page) (*dmarkets.MarketLeaderboardSnapshot, error) {
-	service, ok := h.service.(marketLeaderboardReadModelService)
+	reader, ok := h.service.(publicTradingActivityService)
 	if !ok {
-		return nil, nil
+		writeInternalError(w)
+		return
 	}
-
-	snapshot, err := service.GetMarketLeaderboardReadModel(ctx, marketID, page)
+	activity, err := reader.GetPublicTradingActivity(r.Context(), id)
 	if err != nil {
-		return nil, err
+		writeLeaderboardError(w, err)
+		return
 	}
 
-	if snapshot == nil {
-		if _, refreshErr := service.RefreshMarketLeaderboardSnapshot(ctx, marketID); refreshErr != nil {
-			return nil, refreshErr
-		}
-		snapshot, err = service.GetMarketLeaderboardReadModel(ctx, marketID, page)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return snapshot, nil
+	_ = handlers.WriteResult(w, http.StatusOK, activity)
 }
 
 // ProjectProbability handles GET /markets/{id}/projection

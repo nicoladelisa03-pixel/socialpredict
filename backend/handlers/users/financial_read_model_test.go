@@ -19,9 +19,11 @@ import (
 type financialReadModelServiceMock struct {
 	readModel *analytics.UserFinancialMetricReadModel
 	err       error
+	calls     int
 }
 
 func (m *financialReadModelServiceMock) GetUserFinancialMetricReadModel(context.Context, string) (*analytics.UserFinancialMetricReadModel, error) {
+	m.calls++
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -29,12 +31,16 @@ func (m *financialReadModelServiceMock) GetUserFinancialMetricReadModel(context.
 }
 
 type financialReadModelAuthMock struct {
-	err *authsvc.AuthError
+	user *dusers.User
+	err  *authsvc.AuthError
 }
 
 func (m financialReadModelAuthMock) CurrentUser(*http.Request) (*dusers.User, *authsvc.AuthError) {
 	if m.err != nil {
 		return nil, m.err
+	}
+	if m.user != nil {
+		return m.user, nil
 	}
 	return &dusers.User{Username: "viewer"}, nil
 }
@@ -83,7 +89,7 @@ func TestGetUserFinancialReadModelHandlerReturnsFreshness(t *testing.T) {
 			Snapshot:  snapshot,
 			Freshness: snapshot.Freshness(),
 		},
-	}, financialReadModelAuthMock{})
+	}, financialReadModelAuthMock{user: &dusers.User{Username: "alice"}})
 	req := httptest.NewRequest(http.MethodGet, "/v0/read/users/alice/financial-summary", nil)
 	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
 	rec := httptest.NewRecorder()
@@ -114,5 +120,27 @@ func TestGetUserFinancialReadModelHandlerReturnsFreshness(t *testing.T) {
 	}
 	if resp.Result.Freshness.TransactionSafeRead {
 		t.Fatalf("freshness should not be transaction safe")
+	}
+}
+
+func TestGetUserFinancialReadModelHandlerRejectsAnotherAccount(t *testing.T) {
+	mock := &financialReadModelServiceMock{readModel: &analytics.UserFinancialMetricReadModel{
+		Snapshot: analytics.UserFinancialMetricSnapshot{Username: "alice"},
+	}}
+	handler := GetUserFinancialReadModelHandler(mock, financialReadModelAuthMock{
+		user: &dusers.User{Username: "bob", UserType: "REGULAR"},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v0/read/users/alice/financial-summary", nil)
+	req = mux.SetURLVars(req, map[string]string{"username": "alice"})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	requireFinancialFailureReason(t, rec, handlers.ReasonAuthorizationDenied)
+	if mock.calls != 0 {
+		t.Fatalf("cross-account read called the service")
 	}
 }

@@ -11,6 +11,7 @@ import {
   LockPasswordSVG,
   LogoutSVG,
   MarketsSVG,
+  StartupsSVG,
   MenuGrowSVG,
   MenuShrinkSVG,
   ProfileSVG,
@@ -18,6 +19,7 @@ import {
   StatsSVG,
 } from '../../assets/components/SvgIcons';
 import useFrontendConfig from '../../hooks/useFrontendConfig';
+import { SITE_NAME } from '../../config';
 import {
   getPendingAdminReviewCounts,
   totalPendingReviewCount,
@@ -142,6 +144,9 @@ const Sidebar = () => {
           <SidebarLink to='/markets' icon={MarketsSVG}>
             Markets
           </SidebarLink>
+          <SidebarLink to='/startups' icon={StartupsSVG}>
+            Startups
+          </SidebarLink>
           <SidebarLink to='/about' icon={AboutSVG}>
             About
           </SidebarLink>
@@ -164,8 +169,14 @@ const Sidebar = () => {
           <SidebarLink to='/admin/cms' icon={AdminGearSVG}>
             CMS
           </SidebarLink>
+          <SidebarLink to='/admin/startups' icon={StartupsSVG}>
+            Manage Startups
+          </SidebarLink>
           <SidebarLink to='/markets' icon={MarketsSVG}>
             Markets
+          </SidebarLink>
+          <SidebarLink to='/startups' icon={StartupsSVG}>
+            Startups
           </SidebarLink>
           <SidebarLink to='/about' icon={AboutSVG}>
             About
@@ -207,6 +218,9 @@ const Sidebar = () => {
         <SidebarLink to='/markets' icon={MarketsSVG}>
           Markets
         </SidebarLink>
+        <SidebarLink to='/startups' icon={StartupsSVG}>
+          Startups
+        </SidebarLink>
         {canCreateMarket && (
           <SidebarLink to='/create' icon={CreateSVG}>
             Create
@@ -239,7 +253,7 @@ const Sidebar = () => {
         } md:relative md:translate-x-0`}
       >
         <div className='flex items-center justify-between p-3 border-b border-gray-700'>
-          <h2 className='text-lg font-bold'>SocialPredict</h2>
+          <h2 className='text-lg font-bold'>{SITE_NAME}</h2>
           <button
             onClick={toggleSidebar}
             className='md:hidden'
@@ -277,6 +291,9 @@ const Sidebar = () => {
           </Link>
           <Link to='/markets' className='text-gray-300 hover:text-white' aria-label='Markets'>
             <MarketsSVG className='w-5 h-5' />
+          </Link>
+          <Link to='/startups' className='text-gray-300 hover:text-white' aria-label='Startups'>
+            <StartupsSVG className='w-5 h-5' />
           </Link>
           {canCreateMarket ? (
             <Link to='/create' className='text-gray-300 hover:text-white' aria-label='Create market'>

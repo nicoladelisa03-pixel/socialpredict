@@ -45,7 +45,7 @@ of pretending the migration is complete.
 Current route-family notes:
 
 - Infra probes use plain text: `/health` and `/readyz`.
-- Operator status uses cache-disabled JSON: `/ops/status`.
+- Operator status uses cache-disabled JSON: `/ops/status`, and requires an admin bearer token.
 - Runtime middleware can return JSON `{ ok: false, reason }` for router-owned
   `405` and middleware-owned `429` failures.
 - Many newer or touched handlers return envelope-shaped success or failure
@@ -66,12 +66,12 @@ application API taxonomy:
 | --- | --- | --- | --- |
 | `GET /health` | `200 text/plain` body `live` | The HTTP process is serving the liveness contract | Database readiness, business correctness, or request success rate |
 | `GET /readyz` | `200 text/plain` body `ready` | The readiness gate is open and the database ping succeeds | Zero-downtime deploy, end-to-end user workflows, or monitoring-stack health |
-| `GET /ops/status` | `200 application/json` while ready, `503 application/json` while unready | Minimal app-owned status fields for operators | Prometheus format, fleet aggregation, latency telemetry, or early startup progress |
+| `GET /ops/status` | `200 application/json` for an admin while ready, `503 application/json` for an admin while unready; `401` without a token and `403` for a non-admin, with no metrics | Minimal app-owned status fields for administrators | Prometheus format, fleet aggregation, latency telemetry, early startup progress, or an anonymous deploy gate |
 
 Current deploy verification gates only on `/health` and `/readyz` for
 `https://kconfs.com` and `https://brierfoxforecast.com`. `/ops/status` remains
-operator troubleshooting surface unless a future design-plan review promotes it
-into deploy verification.
+an administrator troubleshooting surface. Anonymous monitors should use the
+public probes.
 
 ## Updating The API Contract
 

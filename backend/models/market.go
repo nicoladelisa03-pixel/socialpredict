@@ -30,6 +30,8 @@ type Market struct {
 	CreatorUsername         string     `json:"creatorUsername" gorm:"not null"`
 	Creator                 User       `gorm:"foreignKey:CreatorUsername;references:Username"`
 	StewardUsername         string     `json:"stewardUsername" gorm:"index"`
+	StartupID               *int64     `json:"startupId,omitempty" gorm:"index"`
+	Startup                 *Startup   `json:"-" gorm:"foreignKey:StartupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 }
 
 type MarketGroup struct {

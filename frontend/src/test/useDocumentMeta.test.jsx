@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
+import { SITE_DESCRIPTION, SITE_NAME } from '../config';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 
 function getMeta(property) {
@@ -17,15 +18,15 @@ beforeEach(() => {
   // Remove any og: tags left from prior tests
   document.querySelectorAll('meta[property^="og:"]').forEach((el) => el.remove());
   document.querySelectorAll('meta[name^="twitter:"]').forEach((el) => el.remove());
-  document.title = 'SocialPredict';
+  document.title = SITE_NAME;
 });
 
 afterEach(cleanup);
 
 describe('useDocumentMeta', () => {
   it('sets document.title to the provided title', () => {
-    renderHook(() => useDocumentMeta({ title: 'Will it rain? — SocialPredict' }));
-    expect(document.title).toBe('Will it rain? — SocialPredict');
+    renderHook(() => useDocumentMeta({ title: `Will it rain? — ${SITE_NAME}` }));
+    expect(document.title).toBe(`Will it rain? — ${SITE_NAME}`);
   });
 
   it('sets og:title meta tag', () => {
@@ -60,12 +61,12 @@ describe('useDocumentMeta', () => {
       useDocumentMeta({ title: 'Market question?' })
     );
     unmount();
-    expect(getMeta('og:title')).toBe('SocialPredict');
+    expect(getMeta('og:title')).toBe(SITE_NAME);
   });
 
   it('uses site default description when none provided', () => {
     renderHook(() => useDocumentMeta({ title: 'Test' }));
-    expect(getMeta('og:description')).toBe('Prediction markets for the social web');
+    expect(getMeta('og:description')).toBe(SITE_DESCRIPTION);
   });
 
   it('sets image and twitter card metadata', () => {
@@ -78,7 +79,7 @@ describe('useDocumentMeta', () => {
     );
 
     expect(getMeta('og:image')).toBe('https://example.test/share.png');
-    expect(getMeta('og:site_name')).toBe('SocialPredict');
+    expect(getMeta('og:site_name')).toBe(SITE_NAME);
     expect(getNameMeta('twitter:card')).toBe('summary_large_image');
     expect(getNameMeta('twitter:title')).toBe('Market title');
     expect(getNameMeta('twitter:description')).toBe('Market description');

@@ -85,8 +85,9 @@ func (s *Service) RefreshGlobalLeaderboardSnapshot(ctx context.Context) (*Global
 		return nil, err
 	}
 	return &GlobalLeaderboardReadModel{
-		Entries:   leaderboard.Result(),
-		Freshness: snapshot.Freshness(GlobalLeaderboardSnapshotTargetFreshness),
+		Entries:          leaderboard.Result(),
+		ParticipantCount: len(leaderboard.Result()),
+		Freshness:        snapshot.Freshness(GlobalLeaderboardSnapshotTargetFreshness),
 	}, nil
 }
 
@@ -107,8 +108,9 @@ func (s *Service) GetGlobalLeaderboardReadModel(ctx context.Context, limit, offs
 	}
 	paged := (&GlobalLeaderboardSnapshot{Entries: entries}).ResultPage(limit, offset)
 	return &GlobalLeaderboardReadModel{
-		Entries:   paged,
-		Freshness: snapshot.Freshness(GlobalLeaderboardSnapshotTargetFreshness),
+		Entries:          paged,
+		ParticipantCount: len(entries),
+		Freshness:        snapshot.Freshness(GlobalLeaderboardSnapshotTargetFreshness),
 	}, nil
 }
 
